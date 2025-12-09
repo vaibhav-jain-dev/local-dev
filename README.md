@@ -39,8 +39,10 @@ make stop
 | `make run` | Start all services (default: s1 namespace) |
 | `make run <namespace>` | Start all services with specific namespace |
 | `make run <namespace> <services...>` | Start specific services only |
+| `make run refresh` | Start and pull latest code from git |
+| `make run refresh <namespace> <services...>` | Pull latest and start specific services |
 | `make restart` | Stop all, force reconnect redis, start again |
-| `make restart <namespace>` | Restart with specific namespace |
+| `make restart refresh` | Restart with fresh pull from git |
 | `make stop` | Stop all services |
 | `make clean` | Stop services, remove cloned repos, prune docker |
 | `make logs` | View logs for all services |
@@ -72,11 +74,20 @@ make run s1 health-api
 # Start health-api and oms-api with s2
 make run s2 health-api oms-api
 
+# Pull latest code and start (discards local changes)
+make run refresh
+
+# Pull latest for specific namespace
+make run refresh s2
+
+# Pull latest for specific service
+make run refresh s1 health-api
+
 # Restart everything (force kills redis port and reconnects)
 make restart
 
-# Restart with s3 namespace
-make restart s3
+# Restart with fresh pull
+make restart refresh
 
 # View logs for health-api
 make logs health-api
@@ -126,6 +137,30 @@ local-dev/
 6. **Redis**: Port-forward started (skipped if port already busy)
 7. **Build**: Docker containers built in parallel
 8. **Run**: Containers started
+
+## Refresh Flag
+
+Controls whether to pull latest code from git:
+
+| Scenario | Behavior |
+|----------|----------|
+| `make run` (no refresh) | Keep local changes, only clone if missing or switch branch if different |
+| `make run refresh` | Discard local changes, pull latest from git |
+| Service has `always-refresh: true` | Always pull latest (even without refresh flag) |
+
+### Per-Service Always Refresh
+
+Add `always-refresh: true` to a service in config to always pull latest:
+
+```yaml
+services:
+  health-api:
+    enabled: true
+    always-refresh: true  # Always pulls latest code
+    git_repo: git@github.com:Orange-Health/health-api.git
+    git_branch: master
+    ...
+```
 
 ## Redis Handling
 

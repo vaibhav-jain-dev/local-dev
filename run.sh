@@ -28,6 +28,7 @@ NAMESPACE=""
 SERVICES=""
 ACTION=""
 TARGET=""
+REFRESH="false"
 
 # ============================================
 # Utility Functions
@@ -127,7 +128,12 @@ setup_repository() {
     local service=$1
     local repo=$(yq eval ".services.\"${service}\".git_repo" $CONFIG_FILE 2>/dev/null)
     local branch=$(yq eval ".services.\"${service}\".git_branch" $CONFIG_FILE 2>/dev/null)
+    local always_refresh=$(yq eval ".services.\"${service}\".always-refresh" $CONFIG_FILE 2>/dev/null)
     local dir_name=$(basename "$repo" .git)
+
+    # Determine if we should refresh this repo
+    local should_refresh="$REFRESH"
+    [ "$always_refresh" = "true" ] && should_refresh="true"
 
     echo -n "  Setting up $service..."
 
@@ -137,13 +143,36 @@ setup_repository() {
             echo -e " ${RED}✗ (clone failed)${NC}"
             return 1
         }
+        echo -n " (cloned)"
     fi
 
-    # Handle branch checkout
+    # Handle branch checkout and refresh
     if cd "cloned/$dir_name" 2>/dev/null; then
         current_branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
 
-        if [ "$current_branch" != "$branch" ]; then
+        # Refresh: always discard local changes and pull latest
+        if [ "$should_refresh" = "true" ]; then
+            echo -n " (refreshing)"
+            git reset --hard HEAD 2>/dev/null || true
+            git clean -fd 2>/dev/null || true
+            git fetch origin 2>/dev/null || true
+
+            if [ "$current_branch" != "$branch" ]; then
+                if git checkout "$branch" 2>/dev/null; then
+                    git pull origin "$branch" 2>/dev/null || true
+                else
+                    git checkout -b "$branch" "origin/$branch" 2>/dev/null || {
+                        echo -e " ${RED}✗ (branch failed)${NC}"
+                        cd - >/dev/null 2>&1
+                        return 1
+                    }
+                fi
+            else
+                git pull origin "$branch" 2>/dev/null || true
+            fi
+        # No refresh: only switch branch if different
+        elif [ "$current_branch" != "$branch" ]; then
+            echo -n " (switching branch)"
             git reset --hard HEAD 2>/dev/null || true
             git clean -fd 2>/dev/null || true
             git fetch origin 2>/dev/null || true
@@ -157,9 +186,9 @@ setup_repository() {
                     return 1
                 }
             fi
-        else
-            git pull -q 2>/dev/null || true
         fi
+        # If no refresh and same branch: do nothing (keep local changes)
+
         cd - >/dev/null 2>&1
     fi
 
@@ -312,6 +341,17 @@ parse_args() {
             ;;
     esac
 
+    # Check for refresh flag (can be anywhere in args)
+    local remaining_args=""
+    for arg in "$@"; do
+        if [ "$arg" = "refresh" ]; then
+            REFRESH="true"
+        else
+            remaining_args="$remaining_args $arg"
+        fi
+    done
+    set -- $remaining_args
+
     # Parse namespace and services
     # First positional arg might be namespace
     if [ -n "$1" ]; then
@@ -426,6 +466,7 @@ do_run() {
 
     echo -e "${BOLD}Namespace:${NC} $NAMESPACE"
     echo -e "${BOLD}Services:${NC} $services_to_run"
+    [ "$REFRESH" = "true" ] && echo -e "${BOLD}Refresh:${NC} ${GREEN}yes${NC} (will pull latest code)"
     echo ""
 
     # ========== Phase 1: Repository Setup (parallel where possible) ==========
