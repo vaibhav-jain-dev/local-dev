@@ -16,33 +16,87 @@ This tool clones multiple repositories, overrides their configurations with envi
 ## Quick Start
 
 ```bash
-# Start all services with default config
-make start
+# Start all services (default namespace: s1)
+make run
 
-# Start all services with specific environment (s1, s2, s3, etc.)
-make start tag=s1
+# Start with specific namespace
+make run s2
 
-# Start a specific service
-make start health-api
+# Start specific services only
+make run s1 health-api oms-api
 
-# Start a specific service with environment
-make start health-api tag=s2
+# Restart all (force reconnect redis)
+make restart
+
+# Stop all services
+make stop
+```
+
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `make run` | Start all services (default: s1 namespace) |
+| `make run <namespace>` | Start all services with specific namespace |
+| `make run <namespace> <services...>` | Start specific services only |
+| `make restart` | Stop all, force reconnect redis, start again |
+| `make restart <namespace>` | Restart with specific namespace |
+| `make stop` | Stop all services |
+| `make clean` | Stop services, remove cloned repos, prune docker |
+| `make logs` | View logs for all services |
+| `make logs <service>` | View logs for specific service |
+| `make stats` | View resource usage |
+
+## Valid Namespaces
+
+```
+s1, s2, s3, s4, s5, qa, auto
+```
+
+- Default namespace is **s1**
+- Namespace folder must exist: `configs/<namespace>/`
+- Script throws error if folder not found
+
+## Examples
+
+```bash
+# Start all services with s1 (default)
+make run
+
+# Start all services with s2 namespace
+make run s2
+
+# Start only health-api with s1
+make run s1 health-api
+
+# Start health-api and oms-api with s2
+make run s2 health-api oms-api
+
+# Restart everything (force kills redis port and reconnects)
+make restart
+
+# Restart with s3 namespace
+make restart s3
+
+# View logs for health-api
+make logs health-api
+
+# Stop everything
+make stop
 ```
 
 ## Directory Structure
 
 ```
 local-dev/
-├── configs/                    # Configuration files
-│   ├── health_secrets.py       # Default configs
-│   ├── oms.yaml
-│   ├── scheduler_secrets.py
-│   ├── s1/                     # Environment s1 configs
+├── configs/                    # Configuration files (per namespace)
+│   ├── s1/                     # Namespace s1 configs (default)
 │   │   ├── health_secrets.py
 │   │   ├── oms.yaml
 │   │   └── scheduler_secrets.py
-│   └── s2/                     # Environment s2 configs
-│       └── ...
+│   ├── s2/                     # Namespace s2 configs
+│   │   └── ...
+│   └── ...
 ├── repos_docker_files/         # Dockerfiles and main config
 │   ├── config.yaml             # Service definitions
 │   ├── health-api.dev.Dockerfile
@@ -54,35 +108,6 @@ local-dev/
 └── Makefile                    # User-friendly commands
 ```
 
-## Commands
-
-| Command | Description |
-|---------|-------------|
-| `make start` | Start all enabled services |
-| `make start <service>` | Start specific service |
-| `make start tag=<env>` | Start with environment-specific configs |
-| `make stop` | Stop all services |
-| `make clean` | Stop services and remove cloned repos |
-| `make logs` | View logs for all services |
-| `make logs <service>` | View logs for specific service |
-| `make stats` | View resource usage |
-
-## Environment Tags
-
-Use environment tags to switch between different configurations:
-
-```bash
-# Uses configs from configs/s1/
-make start tag=s1
-
-# Uses configs from configs/s2/
-make start tag=s2
-```
-
-When a tag is specified:
-1. Config files are loaded from `configs/<tag>/` instead of `configs/`
-2. Redis namespace switches to the tag value (e.g., `kubectl port-forward -n s1 ...`)
-
 ## Services
 
 | Service | Port | Repository |
@@ -93,11 +118,29 @@ When a tag is specified:
 
 ## How It Works
 
-1. **Clone**: Repositories are cloned into `cloned/` directory
-2. **Override**: Config files from `configs/` (or `configs/<tag>/`) are copied into cloned repos
-3. **Dockerfile**: Service-specific Dockerfiles are copied from `repos_docker_files/`
-4. **Compose**: `docker-compose.yml` is auto-generated
-5. **Build & Run**: Docker containers are built and started
+1. **Validate**: Check namespace is valid and folder exists
+2. **Clone**: Repositories cloned into `cloned/` (parallel)
+3. **Override**: Config files from `configs/<namespace>/` copied into repos
+4. **Dockerfile**: Service-specific Dockerfiles copied from `repos_docker_files/`
+5. **Compose**: `docker-compose.yml` auto-generated
+6. **Redis**: Port-forward started (skipped if port already busy)
+7. **Build**: Docker containers built in parallel
+8. **Run**: Containers started
+
+## Redis Handling
+
+- **On run**: Checks if redis port (6379) is busy
+  - If busy → skips (assumes redis already running)
+  - If free → starts `kubectl port-forward -n <namespace> deployment/redis 6379:6379`
+- **On restart**: Force kills any process on redis port, then reconnects
+
+```yaml
+# repos_docker_files/config.yaml
+redis:
+  namespace: s5       # Fallback (overridden by command namespace)
+  deployment: redis   # Kubernetes deployment name
+  port: 6379          # Port to forward
+```
 
 ## Configuration
 
@@ -120,22 +163,7 @@ services:
 
 Then create:
 - `repos_docker_files/my-new-service.dev.Dockerfile`
-- `configs/my_secrets.py` (and environment-specific versions)
-
-### Redis Connection
-
-Redis is accessed via kubectl port-forward. The script auto-generates the command from config:
-
-```yaml
-redis:
-  namespace: s5       # Default namespace (overridden by --tag)
-  deployment: redis   # Kubernetes deployment name
-  port: 6379          # Port to forward
-```
-
-The namespace is determined by:
-1. Environment tag if provided (`--tag=s2` uses namespace `s2`)
-2. Default namespace from config.yaml (`redis.namespace`)
+- `configs/s1/my_secrets.py` (and for other namespaces)
 
 ## Inter-Service Communication
 
@@ -146,41 +174,45 @@ Services can reach each other by name within Docker:
 ## Secrets Handling
 
 This repo uses git filters to mask secrets before committing:
-- AWS keys are replaced with `MASKED_AWS_KEY`
-- Slack tokens are replaced with `MASKED_SLACK_TOKEN`
-- Private keys are replaced with `MASKED_PRIVATE_KEY`
+- AWS keys → `MASKED_AWS_KEY`
+- Slack tokens → `MASKED_SLACK_TOKEN`
+- Private keys → `MASKED_PRIVATE_KEY`
 
-To set up the filter:
+Setup:
 ```bash
 ./scripts/setup-filters.sh
 ```
 
 ## Troubleshooting
 
+### Namespace folder not found
+```bash
+# Create the namespace folder with configs
+mkdir -p configs/s3
+cp configs/s1/* configs/s3/
+# Edit configs as needed
+```
+
 ### Service won't start
 ```bash
-# Check logs
 make logs <service>
-
-# Clean and restart
 make clean
-make start
+make run
 ```
 
 ### Redis connection failed
 ```bash
-# Verify kubectl context
+# Check kubectl context
 kubectl config current-context
 
-# Manual port-forward
-kubectl port-forward -n s5 deployment/redis 6379:6379
+# Force restart redis
+make restart
 ```
 
 ### Branch checkout failed
-The script will discard local changes when switching branches. If issues persist:
 ```bash
 rm -rf cloned/<service-name>
-make start <service>
+make run
 ```
 
 ## Utilities
@@ -192,4 +224,4 @@ Replace environment prefixes in config files:
 python replace_yaml_cross_env.py base.yaml target.yaml s1 s2
 ```
 
-This changes URLs like `s1-api.orangehealth.dev` to `s2-api.orangehealth.dev`.
+Changes URLs like `s1-api.orangehealth.dev` to `s2-api.orangehealth.dev`.
