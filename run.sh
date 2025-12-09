@@ -139,8 +139,8 @@ start_run_timer() {
 }
 
 start_phase() {
-    local phase=$1
-    PHASE_TIMERS[$phase]=$(now_ms)
+    local phase="$1"
+    PHASE_TIMERS["$phase"]=$(now_ms)
     local avg=$(get_phase_avg "$phase")
     local eta=""
     if [ "$avg" -gt 0 ]; then
@@ -150,8 +150,8 @@ start_phase() {
 }
 
 end_phase() {
-    local phase=$1
-    local start=${PHASE_TIMERS[$phase]}
+    local phase="$1"
+    local start="${PHASE_TIMERS["$phase"]}"
     local end=$(now_ms)
     local duration=$((end - start))
     CURRENT_RUN_PHASES=$(echo "$CURRENT_RUN_PHASES" | jq --arg p "$phase" --argjson d "$duration" '. + {($p): $d}')
@@ -159,13 +159,13 @@ end_phase() {
 }
 
 start_operation() {
-    local op=$1
-    OPERATION_TIMERS[$op]=$(now_ms)
+    local op="$1"
+    OPERATION_TIMERS["$op"]=$(now_ms)
 }
 
 end_operation() {
-    local op=$1
-    local start=${OPERATION_TIMERS[$op]}
+    local op="$1"
+    local start="${OPERATION_TIMERS["$op"]}"
     local end=$(now_ms)
     local duration=$((end - start))
     CURRENT_RUN_OPS=$(echo "$CURRENT_RUN_OPS" | jq --arg o "$op" --argjson d "$duration" '. + {($o): $d}')
