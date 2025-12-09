@@ -1,0 +1,42 @@
+# Configuration - auto-detects everything from git URLs
+services:
+  health-api:
+    enabled: true
+    git_repo: git@github.com:Orange-Health/health-api.git
+    git_branch: master
+    port: 8000
+    configs:
+      - source: configs/health_secrets.py
+        dest: app/app/secrets.py
+        required: true
+      - source: configs/health_creds.json
+        dest: serviceAccountKey.json
+        required: false
+        
+  scheduler-api:
+    enabled: true
+    git_repo: git@github.com:Orange-Health/scheduler-api.git
+    git_branch: master
+    port: 8010
+    configs:
+      - source: configs/scheduler_secrets.py
+        dest: app/app/secrets.py
+        required: true
+        
+  oms-api:
+    enabled: true
+    git_repo: git@github.com:Orange-Health/oms.git
+    git_branch: main
+    port: 8080
+    configs:
+      - source: configs/oms.yaml
+        dest: config/config.yaml
+        required: true
+      - source: config/oauth-client.json
+        dest: config/oauth-client.json
+        required: true
+
+redis:
+  namespace: s5
+  deployment: redis
+  port: 6379

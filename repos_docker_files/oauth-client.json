@@ -1,0 +1,19 @@
+    {
+    "web": {
+        "client_id": "45642087540-vr1cfovd8q9u6n66j90929lm978kh9c9.apps.googleusercontent.com",
+        "project_id": "oms-staging-49f5f",
+        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+        "token_uri": "https://oauth2.googleapis.com/token",
+        "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+        "client_secret": "ELr5DApToSjYXVlmu7lfUOiv",
+        "redirect_uris": [
+            "https://oms-staging-49f5f.firebaseapp.com/__/auth/handler",
+            "http://localhost:8182/login"
+        ],
+        "javascript_origins": [
+            "http://localhost",
+            "http://localhost:5000",
+            "https://oms-staging-49f5f.firebaseapp.com"
+        ]
+    }
+}

@@ -1,0 +1,14 @@
+# Ignore all files inside logs folder, but keep the folder
+logs/*
+!logs/.gitkeep
+
+# Ignore all .log files everywhere
+*.log
+
+# Ignore the 'cloned' folder contents but keep the folder empty
+cloned/*
+!cloned/.gitkeep
+
+# Ignore docker-compose.yml in the root directory
+/docker-compose.yml
+

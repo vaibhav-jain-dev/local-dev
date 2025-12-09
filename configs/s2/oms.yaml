@@ -1,0 +1,803 @@
+accounts_api:
+  api_key: 834UruHxXU2ecRMb2S6RgcSF8sn2rMeT
+  api_url: http://s2-accounts-api.orangehealth.dev
+  timeout_seconds: 5
+active_city_codes:
+- BLR
+- DEL
+- NRL
+- MUM
+- NOA
+- HYD
+active_order_window: 7
+additional_charges:
+  OMS:
+    default:
+      charge_description: Collection Charges
+      collection_charge: 99
+      enable_additional_charges_at: '2024-05-03 18:30:00'
+      min_amount: 349
+    new_user:
+      charge_description: Collection Charges
+      collection_charge: 150
+      enable_additional_charges_at: '2029-05-03 18:30:00'
+      min_amount: 350
+    old_user:
+      charge_description: Collection Charges
+      collection_charge: 150
+      enable_additional_charges_at: '2024-12-23 13:00:00'
+      min_amount: 350
+  Patient App:
+    default:
+      charge_description: Collection Charges
+      collection_charge: 99
+      enable_additional_charges_at: '2024-05-03 18:30:00'
+      min_amount: 349
+    new_user:
+      charge_description: Collection Charges
+      collection_charge: 150
+      enable_additional_charges_at: '2029-05-03 18:30:00'
+      min_amount: 350
+    old_user:
+      charge_description: Collection Charges
+      collection_charge: 150
+      enable_additional_charges_at: '2024-12-23 13:00:00'
+      min_amount: 350
+  Patient Public Form:
+    default:
+      charge_description: Collection Charges
+      collection_charge: 99
+      enable_additional_charges_at: '2024-05-03 18:30:00'
+      min_amount: 349
+    new_user:
+      charge_description: Collection Charges
+      collection_charge: 150
+      enable_additional_charges_at: '2029-05-03 18:30:00'
+      min_amount: 350
+    old_user:
+      charge_description: Collection Charges
+      collection_charge: 150
+      enable_additional_charges_at: '2024-12-23 13:00:00'
+      min_amount: 350
+  covid19:
+    charge_description: ''
+    price: 0
+amazon_integration:
+  amazon_payment_gateway: AMAZON_NON_TOKENISED
+  partner_id: 8048
+amazon_tracking_url_base_domain: https://s2-amazon.orangehealth.dev
+api_domain: https://s2-oms-api.orangehealth.dev/api
+authz:
+  model: config/authz_model.conf
+  policy: config/authz_policy.csv
+auto_cancellation_feature:
+  cancellation_time: 14
+  enable: true
+  enable_auto_cancellation_after: '2024-01-23 06:15:00'
+  reason: Unpaid cancelled by system
+  reminder_time: 5
+  sources:
+  - Patient Public Form
+  - Patient App
+aws:
+  AWS_REGION: ap-south-1
+  S3_AWS_ACCESS_KEY_ID: MASKED_AWS_KEY
+  S3_AWS_SECRET_ACCESS_KEY: MASKED_SECRET
+  SNS_AWS_ACCESS_KEY_ID: MASKED_AWS_KEY
+  SNS_AWS_SECRET_ACCESS_KEY: MASKED_SECRET
+  SQS_AWS_ACCESS_KEY_ID: MASKED_AWS_KEY
+  SQS_AWS_SECRET_ACCESS_KEY: MASKED_SECRET
+  bucket: s2-oms-orders
+  public_bucket: s2-oh-media
+  versioned_bucket: s2-oms-orders
+b2c_crm_requests:
+  asbru_base_url: https://s2-partner-order.orangehealth.dev
+  b2c_crm_requests_delayed_time:
+    customer_calling: 5
+    customer_calling_waiting_time: 5
+    data_entry: 5
+base_domain: https://s2-oms.orangehealth.dev
+camps:
+  cron:
+    access_key: 574DE5C3-1CDC-48BC-8C90-AAE1460ADBB9
+cdp_api:
+  api_key: 51L7MTK79IsB8OOld97OO24k
+  api_url: http://cdp-api
+  incoming_api_key: abcd
+  timeout_seconds: 5
+cds:
+  api_key: fdadf23f43qfrt@vs
+  api_url: https://s2-cds-api.orangehealth.dev/api
+  oms_service_email: oms-api@orangehealth.in
+  timeout_seconds: 5
+cds_retool:
+  incoming_api_key: cds#pi*rnj_&evt)8yw2)af(=chw)i_ivq20v)auth
+central_citadel_city_codes:
+- BLR
+- MUM
+- HYD
+- NOA
+- DEL
+- NRL
+central_citadel_event_city_codes:
+- MUM
+- HYD
+- BLR
+- NOA
+- DEL
+- NRL
+cerebro:
+  api_key: MASKED_SECRETbMdHQqnagY
+  api_url: http://cerebro-api
+  bulk_reindex_batch_size: 300
+  bulk_reindex_days_delta: 300
+  timeout_seconds: 5
+check_order_revenue_discripancy_cron:
+  access_key: abcd
+check_request_status_errors_cron:
+  access_key: zB1LdfYu27lI
+citadel:
+  api_key: OF4599TtM5JX73ZdUeJNkPj2
+  central_api_url: https://s2-citadel-api.orangehealth.dev
+  timeout_seconds: 5
+cities_map:
+  Bangalore: BLR
+  Bengaluru: BLR
+  Delhi: NDM
+  Gurgaon: DEL
+  Gurugram: DEL
+  Hyderabad: HYD
+  Mumbai: MUM
+  NationalReferral: NRL
+  NaviMumbai: MVS
+  Noida: NOA
+cloudagent_api:
+  api_key: KKe8dc37bbfe2ec422e98cd47edc5bfcb0
+  api_url: https://in1-ccaas-api.ozonetel.com/CAServices
+  campaign_name: Outbound_918047480248
+  username: orangehealth
+clr:
+  api_key: R2dXT6LeHowPfnvB96UxJA1j
+  api_url: https://s2-clr-api.orangehealth.dev
+  timeout_seconds: 5
+cobranded_header_size: 2 mb
+collection_charges_exempted_package_ids:
+- 67
+collection_portal:
+  cache_version: '5'
+  incoming_api_key: HxHhH9j4w3WbWr496X20UHp2
+communication:
+  mer_master_test_id: 973
+  preparation_instructions:
+    fasting:
+      prep_instruction_not_req: Fasting not required, unless recommended by your doctor.
+      prep_instruction_req: Ensure that you do not eat or drink anything (except water)
+        for 8-12 hours before sample collection.
+      tests: null
+    ppbs:
+      prep_instructions_not_req: Fasting not required, unless recommended by your
+        doctor.
+      prep_instructions_req: Consume food 2 hours prior to the sample collection time.
+      tests:
+      - 108
+      - 109
+      - 502
+      - 565
+    urine:
+      prep_instruction_req: Drink an adequate amount of water and provide a midstream
+        urine sample during collection.
+      prep_instructions_not_req: Urine Sample not required.
+  special_communication_templates_with_tests_and_packages:
+    gct_1hour:
+      packages: null
+      tests:
+      - 480
+      - 73
+    gct_2hours:
+      packages: null
+      tests:
+      - 74
+    gtt_2samples:
+      packages:
+      - 61
+      tests: null
+    gtt_3samples:
+      packages:
+      - 60
+      tests: null
+    gtt_4samples:
+      packages:
+      - 62
+      tests: null
+    gtt_5samples:
+      packages:
+      - 63
+      tests: null
+    hiv_tat_info:
+      packages:
+      - 46
+      - 34
+      - 47
+      - 12
+      - 29
+      tests:
+      - 534
+      - 535
+      - 312
+      - 316
+      - 774
+      - 887
+  test_time_diff: 0
+cors_allow_origin:
+- https://s2-oms-api.orangehealth.dev
+- https://s2-oms-api.orangehealth.dev/
+- https://s2-oms.orangehealth.dev/
+- https://s2-oms.orangehealth.dev
+- https://s2-web.orangehealth.dev
+- https://s2-web.orangehealth.dev/
+- https://s2-feedback.orangehealth.dev/
+- https://s2-feedback.orangehealth.dev
+- https://s2-partner-order.orangehealth.dev
+- https://s2-compass-d2c.orangehealth.dev
+- http://localhost:8182
+- http://localhost:8080
+- http://localhost:8081
+- http://localhost:8111
+cron:
+  cerebro_bulk_reindex_omsrequests_frequency: 0 19 * * *
+  descheduled_rnr_cron:
+    cancellation_threshold_minutes: 8
+    cron_window_minutes: 2
+    deschedule_processor_frequency: '*/2 * * * *'
+    is_enabled: true
+    notification_threshold_minutes: 2
+    rnr_processor_frequency: '*/6 * * * *'
+    second_notification_threshold_minutes: 6
+  document_status_slack_alerts_frequency: '*/5 * * * *'
+  emedic_accepted_notification_frequency: '*/5 * * * *'
+  fasting_sample_collection_reminder_frequency: '*/15 * * * *'
+  follow_up_reminder_frequency: 0 3 * * *
+  frequently_ordered_tests_frequency: 0 0 * * *
+  ppbs_sample_collection_reminder_frequency: '*/15 * * * *'
+  refresh_cds_cache_frequency: '*/15 * * * *'
+  refresh_report_tat_for_search_cache_frequency: '*/5 * * * *'
+  report_tat_breached_communication_frequency: '*/5 * * * *'
+  transaction_logs_reconciliation_frequency: 35 * * * *
+  urine_sample_collection_reminder_frequency: '*/15 * * * *'
+database:
+  database: s2_oms_central
+  host: ohdev-mysql.db.orangehealth.dev
+  maxIdleConnection: 10
+  maxOpenConnection: 100
+  password: qDbBZVHbWhWuL2Upzh2z
+  port: 3306
+  username: admin
+deactivate_expired_partners_cron:
+  access_key: Z8ZcyHj9KReRtYEpqkkh5Rq0AUwq9b5L
+delayed_srf_reminder:
+  access_key: abcd
+doctor_earnings:
+  earnings_max: 15000
+  earnings_min: 8000
+  max_bonus_margin: 10
+  min_bonus_margin: 5
+doctor_earnings_notification:
+  access_key: abcd
+doctor_payouts_cron:
+  access_key: abcd
+doctor_relative_discount_percentage:
+  cat_a: 100
+  cat_b: 50
+  cat_c: 10
+  cat_g: 10
+  cat_p: 50
+doctor_request_delay: 5
+documents:
+  alerts:
+    cc_emails:
+    - ayush@orangehealth.in
+    - cariappa.ganapathi@orangehealth.in
+    - harshitha.h@orangehealth.in
+    email: control-tower@orangehealth.in
+domain: https://s2-oms.orangehealth.dev
+eclinic_emedic_id: 10
+enable_inhouse_abnormality: true
+enable_inhouse_report: true
+enable_neo_report: true
+env: dev
+event:
+  consumer_queue_standard_url: s2-oms-consumer
+  consumer_queue_url: s2-oms-consumer.fifo
+exclude_partner_orders_from_manual_collection_for_partners:
+- 4301
+feedback_api:
+  api_key: y5bR9aM1699AqoOgUqr6HgX4
+  api_url: http://feedback-api
+  incoming_api_key: 1wj4g24sjhmjysePi8FVuEeT
+  surveys:
+    emedic_feedback: 1
+  timeout_seconds: 5
+feedback_web:
+  api_url: https://s2-feedback.orangehealth.dev
+follow_up_notification:
+  access_key: eIVw3FqMXSAHWHfqU263
+  reminder_days_list:
+  - 1
+  - 2
+free_categories_for_doctor_relation:
+- A
+- P
+free_tests_for_doctor_relation:
+- 1318
+freshdesk:
+  creator_group: D2C Test
+  creator_group_patient_validation: D2C Test
+  group_id: 85000014975
+  group_id_patient_validation: 85000014975
+freshsales:
+  api_key: KfCCNoKNUebQe2YHY84OiA
+  api_url: https://orangehealth-489676481845746740.myfreshworks.com/crm/sales
+  create_deal_for_leads: false
+  create_deal_for_requests: false
+  create_deal_for_unbounce_leads: true
+  deals:
+    leads:
+      pipeline_id: 70000091836
+      stage:
+        accept: 70000642954
+        new_lead: 70000642953
+        reject: 70000642955
+    reasons:
+      area_not_serviceable: 70000648852
+      bad_debt: 70000798337
+      cancelling_due_to_collection_charges: 70000798336
+      customer_not_responding: 70000648854
+      delay_in_reaching: 70000798331
+      delay_in_test_results: 70000798332
+      duplicate_order: 70000798334
+      from_another_city: 70000648853
+      got_test_done_elsewhere: 70000648860
+      price_too_high: 70000648855
+      sample_rejected: 70000798338
+      tat_too_high: 70000648856
+      test_unavailable: 70000798335
+      testing: 70000798333
+      wanted_earlier_slot: 70000648857
+      wanted_later_slot: 70000648858
+      wants_to_decide_later: 70000648859
+    requests:
+      pipeline_id: 70000090312
+      stage:
+        accepted: 70000632301
+        cancelled: 70000632302
+        new: 70000632300
+    source:
+      patient_app: 70001239774
+      patient_public_form: 70001239773
+  incoming_api_key: 3iZom2CFMX
+fusion_api:
+  api_key: 5WBxHN5D&gBG1XbNc3T6KfCCNoKNUebQe2YHY84OiA
+  api_url: http://fusion-api
+  incoming_api_key: abcd
+generate_report_pdf_event: true
+geomark:
+  api_url: http://geomark-api
+  timeout_seconds: 5
+google:
+  oauth_client: config/oauth-client.json
+  project_name: oms-staging
+  redirect_url: https://s2-oms.orangehealth.dev/login
+  redirect_url_compass_d2c: https://s2-compass-d2c.orangehealth.dev/login
+  redirect_url_supercrm: null
+  service_account: config/dev-service-account.json
+health_api:
+  api_key: +ny(*s-pn)zg2)99#fl*-8e^yps)t7ak&=r3$cs1hkcb-jk#e2
+  api_url: http://health-api/api
+  incoming_api_key: cJEUKcQq9Dypf48N7T0E5hYi
+  timeout_seconds: 5
+low_accuracy_partners: 7098
+manual_collection_package_ids:
+- 60
+- 61
+- 62
+- 63
+- 64
+manual_collection_test_codes:
+- OD0107
+- OD0049
+- 0D0118
+- GTT 02
+- ODP001
+- OD0098
+- OD0099
+- OD0100
+manual_collection_test_ids:
+- 695
+- 696
+- 697
+- 698
+- 699
+- 758
+- 825
+- 827
+- 828
+- 829
+- 830
+- 831
+- 832
+- 833
+- 834
+- 835
+- 836
+- 837
+- 838
+- 839
+- 841
+- 842
+- 947
+- 997
+- 108
+- 785
+- 1020
+master_tests:
+  covid_rtpcr_id: 461
+  skip_dark_hours_for_test_ids:
+  - 461
+memcache:
+  maxidleconns: 5
+  servers:
+  - memcached:11211
+  timeout: 1
+neo_report_active_cities:
+- BLR
+- DEL
+- NOA
+- HYD
+- MUM
+neo_report_disabled_investigation_ids:
+- 1129
+- 1130
+neo_report_pdf_url: https://s2-www.orangehealth.dev/report
+occ_api:
+  api_key: occbest
+  api_url: https://s2-occ-api.orangehealth.dev
+offer_details:
+  70bc739f-9326-4087-bb6d-9b3a09698a08:
+    discount_borne_by_oh: 100
+    discount_borne_by_partner: 0
+    flat_discount_amount: null
+    is_flat_discount: false
+    max_discount_given_by_oh: 0
+    max_discount_given_by_partner: 0
+    offer_percentage_applied: 10
+    partnerId: 7089
+ops:
+  ops_blackout_end_hour: 1
+  ops_blackout_end_mins: 30
+  ops_blackout_start_hour: 16
+  ops_blackout_start_mins: 30
+order_summary_feature:
+  is_new_checkout_flow_enabled: true
+  is_new_payment_flow_enabled: true
+partner-api:
+  api_key: eL4JwCKSjFNxXxZ2t5CuqJ86Rz
+  api_url: http://partner-api
+  incoming_api_key: 7m20Ft12uoxr850wr4kPvb5h
+  timeout_seconds: 5
+partner_automation:
+  final_check_time_interval_in_mins: 20
+  first_reminder_time_interval_in_mins: 10
+  partner_id_for_automation:
+    '4485': Truworth
+    '5192': 5192 Harshitha Prod Testing
+    '894': Visit Health
+  partner_id_to_exclude_from_sending_communication:
+  - 894
+partner_collection_portal:
+  incoming_api_key: 9ibRUd64VwXCCAuL84uQ3PmP
+partner_ids_for_compass_reports:
+- 2
+- 4301
+partner_ids_to_exclude_from_delay_logistics_dashboard:
+- 5323
+partner_ids_to_exclude_reschedule_if_date_is_different:
+- 5995
+- 894
+partner_web_app:
+  page_limit: 20
+partners:
+  clinic_orders:
+    collection_charge: 250
+    collection_charge_description: Collection charges(to be paid by partner)
+  invoice:
+    cron:
+      access_key: abc
+    email:
+      cc_emails:
+      - archit+OHCCEMAILS@orangehealth.in
+      - cariappa.ganapathi+OHCCEMAILS@orangehealth.in
+    payment_status_cron:
+      access_key: abc
+patient_service:
+  api_key: sdkvewlkjhvaweljhkv
+  api_url: https://s2-patient-api.orangehealth.dev/api
+  timeout_seconds: 5
+patient_validation_blacklisted_test_ids:
+- 785
+- 1020
+- 973
+payment-api:
+  api_key: 5WBxHN5D&gBG1XbNc3T6KfCCNoKNUebQe2YHY84OiA
+  api_url: https://s2-payment-api.orangehealth.dev
+payment_reminder_cron:
+  access_key: VrhReMsmRCgU
+payment_status_cron:
+  access_key: 5PMQ!pdsG5b@
+pdf_server: http://pdfgen:3000
+phc:
+  doctor_summary_test_id: 1010827
+porte:
+  api_key: 8yUxbHQxAekcRuDBvsthK94a
+pre_payment_feature_flags:
+  sources:
+    Patient App:
+      platforms:
+        android:
+          newUser: true
+          oldUser: true
+        ios:
+          newUser: true
+          oldUser: true
+    Patient Public Form:
+      platforms:
+        web:
+          newUser: true
+          oldUser: true
+public_api_url: https://s2-oms-api.orangehealth.dev
+recent_booked_search_frequency: 30
+redis:
+  address: redis:6379
+  db: 4
+  minidle: 5
+  password: ''
+  poolsize: 10
+  pubsub:
+    address: redis:6379
+    db: 32
+    minidle: 1
+    password: ''
+    poolsize: 2
+release_pending_reports:
+  access_key: abcd
+report_generation_enabled_city_codes:
+- MUM
+- HYD
+- NOA
+- DEL
+- NRL
+- BLR
+report_tat:
+  grl_transfer_logistic_tat: 36
+  inhouse_blackout_end_hour: 2
+  inhouse_blackout_end_mins: 30
+  inhouse_blackout_start_hour: 17
+  inhouse_blackout_start_mins: 30
+  inhouse_lab_tat_blackout_end_hour: 2
+  inhouse_lab_tat_blackout_end_mins: 30
+  inhouse_lab_tat_blackout_start_hour: 17
+  inhouse_lab_tat_blackout_start_mins: 30
+  is_inhouse_lab_tat_applicable: false
+  logistic_tat: 3
+  outsourced_blackout_end_hour: 2
+  outsourced_blackout_end_mins: 30
+  outsourced_blackout_start_hour: 17
+  outsourced_blackout_start_mins: 30
+  outsourced_lab_tat_blackout_end_hour: 2
+  outsourced_lab_tat_blackout_end_mins: 30
+  outsourced_lab_tat_blackout_start_hour: 17
+  outsourced_lab_tat_blackout_start_mins: 30
+  release_report_before_sec: 900
+reporting_service:
+  api_url: http://report-rebranding-api
+  auth_token: Bearer 4fe843a2-d2e6-4e90-b089-401a3f17cecc
+  bucket: s2-oh-media
+  timeout_seconds: 5
+  validate_test_token: MASKED_SECRET
+request_feedback_cron:
+  access_key: Kx6my5H7B8JACCV4xFtRiCWXZOQBZMYW
+request_order_status_incomplete:
+  access_key: 484d987b-a741-4f99-b90f-113c33c20642
+request_status_cron:
+  access_key: xxx
+retool_api_key: MASKED_SECRET4rGu6Oyi
+revenue-register:
+  database:
+    database: s2_revenueregister
+    host: ohdev-postgres.db.orangehealth.dev
+    maxIdleConnection: 10
+    maxOpenConnection: 100
+    password: wWQfBQffHeMALuQJBu4q
+    port: 5432
+    username: admin
+revshare_api_key: MASKED_SECRET
+riderapp:
+  task_vial_alert_map:
+    '13':
+    - Sodium heparin vial required
+    '2':
+    - Citrate vial required
+    '27':
+    - Please ensure enough stool volume
+    '28':
+    - Please ensure enough urine volume
+    '30':
+    - Streck tube required
+    '31':
+    - Swab sample needed
+    '38':
+    - EDTA(Metal Free) vial required
+    '39':
+    - Serum(Metal Free) vial required
+    '40':
+    - 6-Lead ECG machine required
+    '44':
+    - 12-Lead ECG machine required
+    '45':
+    - Vitals/BP machine needed
+    '46':
+    - NIPT vial required
+    '48':
+    - Lithium heparin vial required
+  token: abcd
+s3wrapper_api:
+  api_key: 8svT6rATpLQ8B8umHU8pvh5Z
+  api_url: https://s2-files.orangehealth.dev
+  batch_limit: 5000
+  timeout_seconds: 5
+sample_collection_reminder_cron:
+  access_key: yA2Ldezv38oD
+schedule_reminder_cron:
+  access_key: 1BodiPeeze
+scheduler_api:
+  api_key: v55ws2TAppCFaLmpa4Ray1IE
+  api_url: https://s2-scheduler-api.orangehealth.dev/api/v1
+  api_url_v2: https://s2-scheduler-api.orangehealth.dev/api/v2
+  incoming_api_key: iasKTEcYuqv0JnNM06utdNH3
+  redis:
+    address: redis:6379
+    db: 16
+    minidle: 5
+    password: ''
+    poolsize: 5
+  timeout_seconds: 20
+search_frequently_ordered:
+  packages: 5
+  tests: 15
+search_service:
+  blacklisted_package_ids_d2c:
+  - 0
+  blacklisted_test_ids_d2c:
+  - 695
+  - 696
+  - 697
+  - 698
+  - 699
+  - 700
+  - 758
+  - 775
+  - 825
+  - 827
+  - 828
+  - 829
+  - 830
+  - 831
+  - 832
+  - 833
+  - 834
+  - 835
+  - 836
+  - 837
+  - 838
+  - 839
+  - 841
+  - 842
+  - 947
+  - 997
+  - 1010792
+  - 1010820
+  - 1010821
+  - 1010827
+  index_prefix: s2
+  search_api_version: v3
+security:
+  jwt_secret: '#g2edfVW?hDYV*mH'
+send_payment_link:
+  access_key: xxx
+sentry:
+  dsn: https://8f97657076d947478a6520fc7f90287c@o397714.ingest.sentry.io/5699151
+server:
+  host: 0.0.0.0
+  port: 8080
+slack:
+  api_token: MASKED_SLACK_TOKEN
+  blood_report_automation_channel: blood-report-automation-%s
+  document_status_alert_channel: document-status-alerts
+  lis_report_sync_failures_channel: lis-sync-failures-%s
+  missing_parameters_channel: missing-tests-investigations
+  order_revenue_discrepancies: order-revenue-discrepancies-%s
+  report_sync_channel: report-sync-%s
+  report_sync_failures_channel: report-sync-failures-%s
+  request_status_error_channel: '%s_patient_ordering_errors'
+  resend_reports_channel: resend-report-alerts-%s
+  sample_loss_risk_alert_channel: central-sample-loss-risk-alerts
+  special_tube_dispatch_channel: special-tube-dispatch
+  staging_communication_channel: staging_slack_communication
+  tests_checkups_update_channel: tests_checkups_price_tat_update
+sorting_hat:
+  api_key: abcd
+  api_url: http://sorting-hat-api
+  incoming_api_key: abcd
+support:
+  order_email: order@orangehealth.in
+test_dedup_eta: 60
+test_dedup_valid_sources:
+- camp_qr_code
+- clinic front desk
+- doctor app
+- doctor support
+- doctor utm form
+- oms
+- partner api - paperplane
+- partner_api
+- partnership utm form
+- patient app
+- patient public form
+- trf app
+- partner_api
+test_lis_bypass_resync: true
+test_public_file_url: ''
+topics:
+  citadel: arn:aws:sns:ap-south-1:267224240039:s2-citadel-task-updates.fifo
+  consent_flow: arn:aws:sns:ap-south-1:267224240039:s2-consent-claim-flow
+  invoice_backfill_flow: arn:aws:sns:ap-south-1:267224240039:s2-invoice-backfill
+  order_flow: arn:aws:sns:ap-south-1:267224240039:s2-order-flow
+  order_report_update:
+    message_group_id: pdf-reporting-data-stag-topic
+    topic: arn:aws:sns:ap-south-1:267224240039:s2-order-results-update.fifo
+  partner_recommendation: arn:aws:sns:ap-south-1:267224240039:s2-partner-recommendation
+  revenue_flow: arn:aws:sns:ap-south-1:267224240039:s2-revenue-flow
+track_order_link: https://s2-web.orangehealth.dev/public/order-details?id=%s&token=%s
+transaction_logs_reconciliation_time_frame_in_hours: 4
+update_frequently_ordered_tests:
+  access_key: kjewbvwkevonoi23t9u09
+upi_id_based_partner_tagging:
+  onebanc:
+    partner_id: '6681'
+    vpa_pattern: '@hi'
+upi_intent_required_for_partner_orders: true
+vault_api:
+  base_url: https://s2-vault-api.orangehealth.dev
+whatsapp:
+  emedic_feedback_message_delay: 60
+  emedic_feedback_template: emedic_feedback_form
+  invoice_message_delay: 0
+  payment_message_delay: 0
+  srf_acknowldgement_template: srf_form_submission_ack
+  srf_template: srf_form_link
+worker:
+  broker: https://sqs.ap-south-1.amazonaws.com/267224240039
+  default_queue: s2-oms
+  dynamic_queue_enabled: true
+  partner_recommendation_batch_size: 100
+  processes: 10
+  redis_max_idle: 10
+  redis_pool_size: 20
+  result_backend: redis://redis:6379/70
+  tasks:
+    check_order_dedup:
+      processes: 1
+      queue: s2_oms_check_order_deduplication
+worker_test_dedup_check: true
+zapier_paid_leads:
+  access_key: Bae8dc37bbfe2ec422e98cd47edc5bfcb1
+zapier_url: https://hooks.zapier.com/hooks/catch/12887569/3tnd0ta/
