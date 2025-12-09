@@ -1,0 +1,6 @@
+# Apply masking to all config files
+configs/** filter=masksecrets
+*.yaml    filter=masksecrets
+*.json    filter=masksecrets
+*.py      filter=masksecrets
+
