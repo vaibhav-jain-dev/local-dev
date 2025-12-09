@@ -137,12 +137,22 @@ setup_repository() {
 
     echo -n "  Setting up $service..."
 
-    # Clone if needed
+    # Clone if needed (with retry for parallel SSH contention)
     if [ ! -d "cloned/$dir_name/.git" ]; then
-        git clone -q "$repo" "cloned/$dir_name" 2>/dev/null || {
+        local clone_success=false
+        for attempt in 1 2 3; do
+            if git clone -q "$repo" "cloned/$dir_name" 2>/dev/null; then
+                clone_success=true
+                break
+            fi
+            # Random backoff (1-3 seconds) to avoid SSH contention
+            sleep $((RANDOM % 3 + 1))
+            rm -rf "cloned/$dir_name" 2>/dev/null  # Clean up partial clone
+        done
+        if [ "$clone_success" = false ]; then
             echo -e " ${RED}✗ (clone failed)${NC}"
             return 1
-        }
+        fi
         echo -n " (cloned)"
     fi
 
