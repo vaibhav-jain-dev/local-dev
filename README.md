@@ -2,6 +2,55 @@
 
 A local development environment orchestrator for running Orange Health microservices via Docker.
 
+---
+
+## AI Context
+
+> **For AI assistants**: This section provides a quick understanding of the repository.
+
+### What This Repo Does
+This is a **local development orchestrator** that:
+1. Clones multiple Orange Health microservice repos into `cloned/`
+2. Overrides their config files with environment-specific secrets from `configs/<namespace>/`
+3. Copies custom Dockerfiles from `repos_docker_files/`
+4. Auto-generates `docker-compose.yml`
+5. Runs everything in Docker with Redis via kubectl port-forward
+
+### Key Files
+| File | Purpose |
+|------|---------|
+| `run.sh` | Main orchestrator script (~570 lines bash) |
+| `Makefile` | User-facing commands (`make run`, `make restart`, etc.) |
+| `repos_docker_files/config.yaml` | Service definitions (git repos, branches, ports, config mappings) |
+| `repos_docker_files/*.dev.Dockerfile` | Custom Dockerfiles for each service |
+| `configs/<namespace>/` | Environment-specific secrets (s1, s2, s3, s4, s5, qa, auto) |
+
+### Core Concepts
+- **Namespace**: Environment identifier (s1, s2, etc.) - determines which config folder to use and which k8s namespace for Redis
+- **Refresh**: Flag to discard local changes and pull latest from git
+- **always-refresh**: Per-service config to always pull latest
+
+### Command Flow
+```
+make run s2 health-api
+    │
+    ├─→ Validate namespace (s2) exists in configs/s2/
+    ├─→ Clone git@github.com:Orange-Health/health-api.git → cloned/health-api/
+    ├─→ Copy configs/s2/health_secrets.py → cloned/health-api/app/app/secrets.py
+    ├─→ Copy repos_docker_files/health-api.dev.Dockerfile → cloned/health-api/dev.Dockerfile
+    ├─→ Generate docker-compose.yml
+    ├─→ kubectl port-forward -n s2 deployment/redis 6379:6379
+    └─→ docker-compose up -d
+```
+
+### Important Behaviors
+- Default namespace: `s1`
+- Redis port check: skips if already in use, force-kills on `restart`
+- Without `refresh`: preserves local changes in cloned repos
+- With `refresh`: `git reset --hard && git clean -fd && git pull`
+
+---
+
 ## Overview
 
 This tool clones multiple repositories, overrides their configurations with environment-specific settings, and runs them in Docker containers on a shared network.
