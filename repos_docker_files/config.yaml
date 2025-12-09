@@ -40,3 +40,7 @@ redis:
   namespace: s5
   deployment: redis
   port: 6379
+  start_cmd: |
+    kubectl port-forward -n {namespace} deployment/redis 6379:6379 >/dev/null 2>&1 &
+  stop_cmd: |
+    pkill -f "kubectl port-forward.*redis" 2>/dev/null || true
