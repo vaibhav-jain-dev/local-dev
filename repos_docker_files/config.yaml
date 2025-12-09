@@ -1,10 +1,16 @@
 # Configuration - auto-detects everything from git URLs
+# Options per service:
+#   enabled: true/false - whether to include in 'make run'
+#   always-refresh: true - always pull latest (even without 'refresh' flag)
+#   git_repo, git_branch, port, configs - standard settings
+
 services:
   health-api:
     enabled: true
     git_repo: git@github.com:Orange-Health/health-api.git
     git_branch: master
     port: 8000
+    # always-refresh: true  # uncomment to always pull latest
     configs:
       - source: configs/health_secrets.py
         dest: app/app/secrets.py
