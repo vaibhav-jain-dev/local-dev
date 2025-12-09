@@ -132,6 +132,11 @@ RUN_START_MS=0
 CURRENT_RUN_PHASES="{}"
 CURRENT_RUN_OPS="{}"
 
+# Sanitize keys for associative arrays (replace spaces/colons with underscores)
+sanitize_key() {
+    echo "$1" | tr ' :' '__'
+}
+
 start_run_timer() {
     RUN_START_MS=$(now_ms)
     CURRENT_RUN_PHASES="{}"
@@ -140,7 +145,8 @@ start_run_timer() {
 
 start_phase() {
     local phase="$1"
-    PHASE_TIMERS["$phase"]=$(now_ms)
+    local key=$(sanitize_key "$phase")
+    PHASE_TIMERS["$key"]=$(now_ms)
     local avg=$(get_phase_avg "$phase")
     local eta=""
     if [ "$avg" -gt 0 ]; then
@@ -151,7 +157,8 @@ start_phase() {
 
 end_phase() {
     local phase="$1"
-    local start="${PHASE_TIMERS["$phase"]}"
+    local key=$(sanitize_key "$phase")
+    local start="${PHASE_TIMERS["$key"]}"
     local end=$(now_ms)
     local duration=$((end - start))
     CURRENT_RUN_PHASES=$(echo "$CURRENT_RUN_PHASES" | jq --arg p "$phase" --argjson d "$duration" '. + {($p): $d}')
@@ -160,12 +167,14 @@ end_phase() {
 
 start_operation() {
     local op="$1"
-    OPERATION_TIMERS["$op"]=$(now_ms)
+    local key=$(sanitize_key "$op")
+    OPERATION_TIMERS["$key"]=$(now_ms)
 }
 
 end_operation() {
     local op="$1"
-    local start="${OPERATION_TIMERS["$op"]}"
+    local key=$(sanitize_key "$op")
+    local start="${OPERATION_TIMERS["$key"]}"
     local end=$(now_ms)
     local duration=$((end - start))
     CURRENT_RUN_OPS=$(echo "$CURRENT_RUN_OPS" | jq --arg o "$op" --argjson d "$duration" '. + {($o): $d}')
