@@ -18,6 +18,7 @@ DIM='\033[2m'
 CONFIG_FILE="repos_docker_files/config.yaml"
 LOG_DIR="logs"
 CACHE_FILE="logs/cache.txt"
+BRANCH_CACHE_FILE="logs/branch_cache.txt"
 METRICS_FILE="logs/run_metrics.json"
 MAX_METRICS_HISTORY=30
 
@@ -70,6 +71,53 @@ get_redis_deployment() {
 is_port_busy() {
     local port=$1
     lsof -Pi :${port} -sTCP:LISTEN -t >/dev/null 2>&1
+}
+
+# ============================================
+# Branch Cache Functions
+# ============================================
+
+get_cached_branch() {
+    local service=$1
+    if [ -f "$BRANCH_CACHE_FILE" ]; then
+        grep "^${service}:" "$BRANCH_CACHE_FILE" 2>/dev/null | cut -d: -f2
+    fi
+}
+
+save_cached_branch() {
+    local service=$1
+    local branch=$2
+    mkdir -p "$LOG_DIR"
+    # Remove old entry if exists
+    if [ -f "$BRANCH_CACHE_FILE" ]; then
+        grep -v "^${service}:" "$BRANCH_CACHE_FILE" > "${BRANCH_CACHE_FILE}.tmp" 2>/dev/null || true
+        mv "${BRANCH_CACHE_FILE}.tmp" "$BRANCH_CACHE_FILE"
+    fi
+    # Add new entry
+    echo "${service}:${branch}" >> "$BRANCH_CACHE_FILE"
+}
+
+# Try to checkout a branch, returns 0 on success
+try_checkout_branch() {
+    local branch=$1
+    local dir=$2
+
+    cd "$dir" 2>/dev/null || return 1
+
+    # Try local checkout first
+    if git checkout "$branch" >/dev/null 2>&1; then
+        cd - >/dev/null 2>&1
+        return 0
+    fi
+
+    # Try creating from remote
+    if git checkout -b "$branch" "origin/$branch" >/dev/null 2>&1; then
+        cd - >/dev/null 2>&1
+        return 0
+    fi
+
+    cd - >/dev/null 2>&1
+    return 1
 }
 
 # ============================================
@@ -344,46 +392,88 @@ setup_repository() {
     if cd "cloned/$dir_name" 2>/dev/null; then
         current_branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
 
+        # Check for cached branch (overrides config if exists)
+        local cached_branch=$(get_cached_branch "$service")
+        local target_branch="$branch"
+        if [ -n "$cached_branch" ]; then
+            target_branch="$cached_branch"
+        fi
+
+        # Determine alternative branch (main <-> master fallback)
+        local alt_branch=""
+        if [ "$branch" = "master" ]; then
+            alt_branch="main"
+        elif [ "$branch" = "main" ]; then
+            alt_branch="master"
+        fi
+
+        git fetch origin >/dev/null 2>&1 || true
+
         if [ "$should_refresh" = "true" ]; then
-            echo -n "    ├─ pulling latest ($branch)..."
+            echo -n "    ├─ pulling latest ($target_branch)..."
             git reset --hard HEAD >/dev/null 2>&1 || true
             git clean -fd >/dev/null 2>&1 || true
-            git fetch origin >/dev/null 2>&1 || true
 
-            if [ "$current_branch" != "$branch" ]; then
-                if git checkout "$branch" >/dev/null 2>&1; then
-                    git pull origin "$branch" >/dev/null 2>&1 || true
-                else
-                    git checkout -b "$branch" "origin/$branch" >/dev/null 2>&1 || {
+            if [ "$current_branch" != "$target_branch" ]; then
+                if git checkout "$target_branch" >/dev/null 2>&1; then
+                    git pull origin "$target_branch" >/dev/null 2>&1 || true
+                    save_cached_branch "$service" "$target_branch"
+                elif git checkout -b "$target_branch" "origin/$target_branch" >/dev/null 2>&1; then
+                    save_cached_branch "$service" "$target_branch"
+                elif [ -n "$alt_branch" ]; then
+                    # Try alternative branch
+                    echo -e " ${YELLOW}trying $alt_branch${NC}"
+                    echo -n "    ├─ pulling latest ($alt_branch)..."
+                    if git checkout "$alt_branch" >/dev/null 2>&1 || git checkout -b "$alt_branch" "origin/$alt_branch" >/dev/null 2>&1; then
+                        git pull origin "$alt_branch" >/dev/null 2>&1 || true
+                        save_cached_branch "$service" "$alt_branch"
+                        target_branch="$alt_branch"
+                    else
                         echo -e " ${RED}✗ branch not found${NC}"
                         cd - >/dev/null 2>&1
                         return 1
-                    }
-                fi
-            else
-                git pull origin "$branch" >/dev/null 2>&1 || true
-            fi
-            local commit=$(git rev-parse --short HEAD 2>/dev/null)
-            echo -e " ${GREEN}✓${NC} ${DIM}@$commit${NC}"
-        elif [ "$current_branch" != "$branch" ]; then
-            echo -n "    ├─ switching to $branch..."
-            git reset --hard HEAD >/dev/null 2>&1 || true
-            git clean -fd >/dev/null 2>&1 || true
-            git fetch origin >/dev/null 2>&1 || true
-
-            if git checkout "$branch" >/dev/null 2>&1; then
-                git pull origin "$branch" >/dev/null 2>&1 || true
-            else
-                git checkout -b "$branch" "origin/$branch" >/dev/null 2>&1 || {
+                    fi
+                else
                     echo -e " ${RED}✗ branch not found${NC}"
                     cd - >/dev/null 2>&1
                     return 1
-                }
+                fi
+            else
+                git pull origin "$target_branch" >/dev/null 2>&1 || true
+            fi
+            local commit=$(git rev-parse --short HEAD 2>/dev/null)
+            echo -e " ${GREEN}✓${NC} ${DIM}@$commit${NC}"
+        elif [ "$current_branch" != "$target_branch" ]; then
+            echo -n "    ├─ switching to $target_branch..."
+            git reset --hard HEAD >/dev/null 2>&1 || true
+            git clean -fd >/dev/null 2>&1 || true
+
+            if git checkout "$target_branch" >/dev/null 2>&1; then
+                git pull origin "$target_branch" >/dev/null 2>&1 || true
+                save_cached_branch "$service" "$target_branch"
+            elif git checkout -b "$target_branch" "origin/$target_branch" >/dev/null 2>&1; then
+                save_cached_branch "$service" "$target_branch"
+            elif [ -n "$alt_branch" ]; then
+                # Try alternative branch
+                echo -e " ${YELLOW}trying $alt_branch${NC}"
+                echo -n "    ├─ switching to $alt_branch..."
+                if git checkout "$alt_branch" >/dev/null 2>&1 || git checkout -b "$alt_branch" "origin/$alt_branch" >/dev/null 2>&1; then
+                    save_cached_branch "$service" "$alt_branch"
+                    target_branch="$alt_branch"
+                else
+                    echo -e " ${RED}✗ branch not found${NC}"
+                    cd - >/dev/null 2>&1
+                    return 1
+                fi
+            else
+                echo -e " ${RED}✗ branch not found${NC}"
+                cd - >/dev/null 2>&1
+                return 1
             fi
             echo -e " ${GREEN}✓${NC}"
         else
             local commit=$(git rev-parse --short HEAD 2>/dev/null)
-            echo -e "    ├─ on $branch ${DIM}@$commit${NC} ${GREEN}✓${NC}"
+            echo -e "    ├─ on $target_branch ${DIM}@$commit${NC} ${GREEN}✓${NC}"
         fi
 
         cd - >/dev/null 2>&1
