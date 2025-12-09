@@ -38,7 +38,7 @@ services:
       - source: configs/oms.yaml
         dest: config/config.yaml
         required: true
-      - source: config/oauth-client.json
+      - source: configs/oauth-client.json
         dest: config/oauth-client.json
         required: true
 
