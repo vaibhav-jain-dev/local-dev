@@ -91,17 +91,18 @@ get_redis_namespace() {
     fi
 }
 
-execute_cmd() {
-    local cmd_path=$1
-    local cmd=$(yq eval "$cmd_path" $CONFIG_FILE 2>/dev/null || echo "")
-    
-    if [ -n "$cmd" ] && [ "$cmd" != "null" ]; then
-        local namespace=$(get_redis_namespace)
-        cmd=${cmd//\{namespace\}/$namespace}
-        eval "$cmd" >/dev/null 2>&1
-        return $?
-    fi
-    return 1
+start_redis_portforward() {
+    local namespace=$(get_redis_namespace)
+    local deployment=$(yq eval '.redis.deployment' $CONFIG_FILE 2>/dev/null || echo "redis")
+    local port=$(yq eval '.redis.port' $CONFIG_FILE 2>/dev/null || echo "6379")
+
+    kubectl port-forward -n "$namespace" "deployment/$deployment" "${port}:${port}" >/dev/null 2>&1 &
+    return $?
+}
+
+stop_redis_portforward() {
+    local deployment=$(yq eval '.redis.deployment' $CONFIG_FILE 2>/dev/null || echo "redis")
+    pkill -f "kubectl port-forward.*$deployment" 2>/dev/null || true
 }
 
 cache_containers() {
@@ -393,7 +394,7 @@ fi
 if [ "$ACTION" = "stop" ]; then
     echo "⏹  Stopping services..."
     docker-compose down 2>/dev/null || true
-    execute_cmd ".redis.stop_cmd" || pkill -f "kubectl port-forward.*redis" 2>/dev/null || true
+    stop_redis_portforward
     rm -f "$CACHE_FILE"
     echo -e "${GREEN}✓ All services stopped${NC}"
     exit 0
@@ -405,7 +406,7 @@ if [ "$ACTION" = "clean" ]; then
     docker-compose down -v 2>/dev/null || true
     docker system prune -af 2>/dev/null || true
     rm -rf cloned docker-compose.yml logs/*
-    execute_cmd ".redis.stop_cmd" || pkill -f "kubectl port-forward.*redis" 2>/dev/null || true
+    stop_redis_portforward
     echo -e "${GREEN}✓ Environment cleaned${NC}"
     exit 0
 fi
@@ -545,7 +546,7 @@ if lsof -Pi :6379 -sTCP:LISTEN -t >/dev/null 2>&1; then
 else
     # Port not in use, try to start port-forward
     echo "  Starting Redis port-forward..."
-    if execute_cmd ".redis.start_cmd"; then
+    if start_redis_portforward; then
         sleep 2
         if lsof -Pi :6379 -sTCP:LISTEN -t >/dev/null 2>&1; then
             echo -e "  ${GREEN}✓${NC} Redis port-forward started"
@@ -554,7 +555,10 @@ else
         fi
     else
         echo -e "  ${YELLOW}⚠${NC} Could not start Redis port-forward"
-        echo -e "    You may need to run manually: kubectl port-forward -n $(get_redis_namespace) deployment/redis 6379:6379"
+        local ns=$(get_redis_namespace)
+        local dep=$(yq eval '.redis.deployment' $CONFIG_FILE 2>/dev/null || echo "redis")
+        local port=$(yq eval '.redis.port' $CONFIG_FILE 2>/dev/null || echo "6379")
+        echo -e "    You may need to run manually: kubectl port-forward -n $ns deployment/$dep $port:$port"
     fi
 fi
 

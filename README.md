@@ -124,18 +124,18 @@ Then create:
 
 ### Redis Connection
 
-Redis is accessed via kubectl port-forward. The namespace is determined by:
-1. Environment tag if provided (`--tag=s2` uses namespace `s2`)
-2. Default namespace from config.yaml (`redis.namespace`)
+Redis is accessed via kubectl port-forward. The script auto-generates the command from config:
 
 ```yaml
 redis:
-  namespace: s5              # Default namespace
-  deployment: redis
-  port: 6379
-  start_cmd: |
-    kubectl port-forward -n {namespace} deployment/redis 6379:6379
+  namespace: s5       # Default namespace (overridden by --tag)
+  deployment: redis   # Kubernetes deployment name
+  port: 6379          # Port to forward
 ```
+
+The namespace is determined by:
+1. Environment tag if provided (`--tag=s2` uses namespace `s2`)
+2. Default namespace from config.yaml (`redis.namespace`)
 
 ## Inter-Service Communication
 
