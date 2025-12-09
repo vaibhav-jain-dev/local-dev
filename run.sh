@@ -432,6 +432,7 @@ COMPOSE
     for service in $services_to_include; do
         local repo=$(yq eval ".services.\"${service}\".git_repo" $CONFIG_FILE 2>/dev/null)
         local port=$(yq eval ".services.\"${service}\".port" $CONFIG_FILE 2>/dev/null)
+        local service_type=$(yq eval ".services.\"${service}\".type" $CONFIG_FILE 2>/dev/null)
         local dir_name=$(basename "$repo" .git)
 
         [ ! -d "cloned/$dir_name" ] && continue
@@ -446,7 +447,31 @@ COMPOSE
     ports: ["${port}:${port}"]
 COMPOSE
 
-        if [[ "$service" == *"oms"* ]]; then
+        # Handle different service types
+        if [ "$service_type" = "nextjs" ]; then
+            # Next.js frontend service (e.g., bifrost)
+            cat >> docker-compose.yml << COMPOSE
+    volumes:
+      - ./cloned/${dir_name}:/app
+      - /app/node_modules
+      - /app/.next
+    environment:
+      NODE_ENV: development
+      NEXT_TELEMETRY_DISABLED: 1
+      WATCHPACK_POLLING: 'true'
+COMPOSE
+        elif [ "$service_type" = "nodejs" ]; then
+            # Node.js frontend service (e.g., oms-web)
+            cat >> docker-compose.yml << COMPOSE
+    volumes:
+      - ./cloned/${dir_name}:/app
+      - /app/node_modules
+    environment:
+      NODE_ENV: development
+      PORT: ${port}
+COMPOSE
+        elif [[ "$service" == "oms-api" ]]; then
+            # Go OMS API service
             cat >> docker-compose.yml << COMPOSE
     volumes:
       - ./cloned/${dir_name}:/go/src/github.com/Orange-Health/oms
@@ -455,6 +480,7 @@ COMPOSE
       GO111MODULE: on
 COMPOSE
         else
+            # Python/Django services (default)
             cat >> docker-compose.yml << COMPOSE
     volumes:
       - ./cloned/${dir_name}/app:/app
