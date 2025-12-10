@@ -12,13 +12,20 @@ RUN apk add --no-cache \
     libc6-compat
 
 # Copy package files first for better caching
-COPY package*.json ./
-COPY yarn.lock* ./
+# Note: Using explicit file names to fail fast if missing
+COPY package.json ./
+COPY package-lock.json* yarn.lock* ./
 
-# Install dependencies
-RUN if [ -f yarn.lock ]; then yarn install --frozen-lockfile; \
-    elif [ -f package-lock.json ]; then npm ci; \
-    else npm install; fi
+# Install dependencies (only if package.json exists)
+RUN if [ -f yarn.lock ]; then \
+        yarn install --frozen-lockfile; \
+    elif [ -f package-lock.json ]; then \
+        npm ci; \
+    elif [ -f package.json ]; then \
+        npm install; \
+    else \
+        echo "No package.json found - skipping dependency install"; \
+    fi
 
 # Copy the rest of the application
 COPY . .
