@@ -795,20 +795,57 @@ do_run() {
     echo -e "${BOLD}Services:${NC} $service_count services${eta_line}"
     [ "$REFRESH" = "true" ] && echo -e "${BOLD}Refresh:${NC} ${GREEN}yes${NC} (will pull latest code)"
 
-    # ========== Phase 1: Repository Setup ==========
+    # ========== Phase 1: Repository Setup (Parallel) ==========
     start_phase "Phase 1: Repository Setup"
 
     local services_ready=""
     local failed_services=""
 
-    # Setup repositories sequentially for clear output
+    # Create temp directory for parallel job results
+    local parallel_tmp=$(mktemp -d)
+    local pids=""
+
+    echo -e "  ${DIM}Setting up $service_count repositories in parallel...${NC}"
+
+    # Launch all repository setups in parallel
     for service in $services_to_run; do
-        if setup_repository "$service"; then
-            services_ready="$services_ready $service"
+        (
+            if setup_repository "$service" > "${parallel_tmp}/${service}.log" 2>&1; then
+                echo "success" > "${parallel_tmp}/${service}.status"
+            else
+                echo "failed" > "${parallel_tmp}/${service}.status"
+            fi
+        ) &
+        pids="$pids $!"
+    done
+
+    # Wait for all parallel jobs to complete
+    for pid in $pids; do
+        wait $pid 2>/dev/null || true
+    done
+
+    # Collect results and display output
+    for service in $services_to_run; do
+        # Show the captured output
+        if [ -f "${parallel_tmp}/${service}.log" ]; then
+            cat "${parallel_tmp}/${service}.log"
+        fi
+
+        # Check status
+        if [ -f "${parallel_tmp}/${service}.status" ]; then
+            local status=$(cat "${parallel_tmp}/${service}.status")
+            if [ "$status" = "success" ]; then
+                services_ready="$services_ready $service"
+            else
+                failed_services="$failed_services $service"
+            fi
         else
             failed_services="$failed_services $service"
         fi
     done
+
+    # Cleanup temp directory
+    rm -rf "$parallel_tmp"
 
     services_ready=$(echo $services_ready | xargs)
 
@@ -868,25 +905,30 @@ do_run() {
 
     end_phase "Phase 3: Building Containers"
 
-    # ========== Phase 4: Redis ==========
-    start_phase "Phase 4: Redis Connection"
-    start_redis_portforward
-    end_phase "Phase 4: Redis Connection"
+    # ========== Phase 4 & 5: Redis + Start Containers (Parallel) ==========
+    start_phase "Phase 4: Redis + Starting Containers"
 
-    # ========== Phase 5: Start Services ==========
-    start_phase "Phase 5: Starting Containers"
+    # Start Redis port-forward in background
+    start_redis_portforward &
+    local redis_pid=$!
 
-    for service in $services_ready; do
-        echo -n "  Starting $service..."
-        if docker-compose up -d $service >/dev/null 2>&1; then
-            echo -e " ${GREEN}✓${NC}"
-        else
-            echo -e " ${RED}✗${NC}"
-        fi
-    done
+    # Start all containers at once (faster than one-by-one)
+    echo -e "  ${DIM}Starting all containers in parallel...${NC}"
+    local up_output=$(docker-compose up -d 2>&1)
+    local up_status=$?
+
+    # Wait for Redis setup to complete
+    wait $redis_pid 2>/dev/null || true
+
+    if [ $up_status -eq 0 ]; then
+        echo -e "  ${GREEN}✓${NC} All containers started"
+    else
+        echo -e "  ${YELLOW}⚠${NC} Some containers may have failed"
+        echo "$up_output" | grep -i error | head -3 | sed 's/^/    /'
+    fi
 
     sleep 2
-    end_phase "Phase 5: Starting Containers"
+    end_phase "Phase 4: Redis + Starting Containers"
 
     # Save metrics for this run
     save_run_metrics

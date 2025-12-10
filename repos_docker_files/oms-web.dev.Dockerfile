@@ -3,8 +3,13 @@ FROM node:18-alpine
 
 WORKDIR /app
 
-# Install dependencies for development
-RUN apk add --no-cache git
+# Install build dependencies for native npm packages
+RUN apk add --no-cache \
+    git \
+    python3 \
+    make \
+    g++ \
+    libc6-compat
 
 # Copy package files first for better caching
 COPY package*.json ./
