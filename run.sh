@@ -924,6 +924,35 @@ do_run() {
     # ========== Phase 3: Build (parallel with BuildKit) ==========
     start_phase "Phase 3: Building Containers"
 
+    # Check if any frontend service needs GITHUB_NPM_TOKEN
+    local has_frontend_service=false
+    for service in $services_to_include; do
+        local service_type=$(yq eval ".services.\"${service}\".type" $CONFIG_FILE 2>/dev/null)
+        if [ "$service_type" = "nextjs" ] || [ "$service_type" = "nodejs" ]; then
+            has_frontend_service=true
+            break
+        fi
+    done
+
+    # Warn if GITHUB_NPM_TOKEN is missing for frontend services
+    if [ "$has_frontend_service" = true ]; then
+        if [ -z "${GITHUB_NPM_TOKEN:-}" ]; then
+            echo -e "  ${RED}✗ ERROR: GITHUB_NPM_TOKEN not set${NC}"
+            echo -e "  ${YELLOW}Frontend services (bifrost, oms-web) require this token for @orange-health packages${NC}"
+            echo -e ""
+            echo -e "  ${CYAN}To fix, run:${NC}"
+            echo -e "    export GITHUB_NPM_TOKEN=\"ghp_your_token_here\""
+            echo -e ""
+            echo -e "  ${DIM}See README.md for instructions on creating a GitHub Personal Access Token${NC}"
+            end_phase "Phase 3: Building Containers"
+            return 1
+        else
+            echo -e "  ${GREEN}✓${NC} GITHUB_NPM_TOKEN is set"
+            # Export for docker-compose to access
+            export GITHUB_NPM_TOKEN
+        fi
+    fi
+
     echo -e "  ${DIM}Building $service_count container(s) in parallel...${NC}"
 
     # Enable BuildKit for true parallel builds
