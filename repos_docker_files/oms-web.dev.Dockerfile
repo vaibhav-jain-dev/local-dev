@@ -58,6 +58,9 @@ EXPOSE 8182
 # Environment variables for development
 ENV NODE_ENV=development
 ENV PORT=8182
+# Enable legacy OpenSSL provider for webpack 4 compatibility with Node.js 17+
+# This fixes the "ERR_OSSL_EVP_UNSUPPORTED" error caused by OpenSSL 3.0
+ENV NODE_OPTIONS=--openssl-legacy-provider
 
 # Start the application in development mode
 # Use exact script name matching ('"scriptname":') to avoid substring matches like "test-dev"
