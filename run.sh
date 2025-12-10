@@ -546,24 +546,25 @@ COMPOSE
         [ ! -d "cloned/$dir_name" ] && continue
         [ ! -f "cloned/$dir_name/dev.Dockerfile" ] && continue
 
-        cat >> docker-compose.yml << COMPOSE
+        # Handle different service types with appropriate build config
+        if [ "$service_type" = "nextjs" ]; then
+            # Next.js frontend service (e.g., bifrost)
+            # Uses /usr/src/app as workdir and needs GITHUB_TOKEN for private packages
+            cat >> docker-compose.yml << COMPOSE
   ${service}:
     build:
       context: ./cloned/${dir_name}
       dockerfile: dev.Dockerfile
+      args:
+        GITHUB_TOKEN: \${GITHUB_TOKEN:-}
     container_name: ${service}
     ports: ["${port}:${port}"]
-COMPOSE
-
-        # Handle different service types
-        if [ "$service_type" = "nextjs" ]; then
-            # Next.js frontend service (e.g., bifrost)
-            cat >> docker-compose.yml << COMPOSE
     volumes:
-      - ./cloned/${dir_name}:/app
-      - /app/node_modules
-      - /app/.next
+      - ./cloned/${dir_name}:/usr/src/app
+      - /usr/src/app/node_modules
+      - /usr/src/app/.next
     environment:
+      ENV: development
       NODE_ENV: development
       NEXT_TELEMETRY_DISABLED: 1
       WATCHPACK_POLLING: 'true'
@@ -571,6 +572,12 @@ COMPOSE
         elif [ "$service_type" = "nodejs" ]; then
             # Node.js frontend service (e.g., oms-web)
             cat >> docker-compose.yml << COMPOSE
+  ${service}:
+    build:
+      context: ./cloned/${dir_name}
+      dockerfile: dev.Dockerfile
+    container_name: ${service}
+    ports: ["${port}:${port}"]
     volumes:
       - ./cloned/${dir_name}:/app
       - /app/node_modules
@@ -581,6 +588,12 @@ COMPOSE
         elif [[ "$service" == "oms-api" ]]; then
             # Go OMS API service
             cat >> docker-compose.yml << COMPOSE
+  ${service}:
+    build:
+      context: ./cloned/${dir_name}
+      dockerfile: dev.Dockerfile
+    container_name: ${service}
+    ports: ["${port}:${port}"]
     volumes:
       - ./cloned/${dir_name}:/go/src/github.com/Orange-Health/oms
     environment:
@@ -590,6 +603,12 @@ COMPOSE
         else
             # Python/Django services (default)
             cat >> docker-compose.yml << COMPOSE
+  ${service}:
+    build:
+      context: ./cloned/${dir_name}
+      dockerfile: dev.Dockerfile
+    container_name: ${service}
+    ports: ["${port}:${port}"]
     volumes:
       - ./cloned/${dir_name}/app:/app
       - ./cloned/${dir_name}:/workspace
@@ -600,6 +619,7 @@ COMPOSE
 COMPOSE
         fi
 
+        # Add common service settings
         cat >> docker-compose.yml << COMPOSE
     networks: [oh-network]
     platform: linux/amd64
