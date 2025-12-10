@@ -32,16 +32,18 @@ RUN if [ -n "$GITHUB_NPM_TOKEN" ]; then \
 
 # Install dependencies - try yarn first, then npm
 # Using separate RUN to get better error visibility
+# Note: Using --legacy-peer-deps for npm to handle peer dependency conflicts
+# (e.g., eslint-plugin-prettier@4.2.1 with eslint@9.x)
 RUN echo "=== Package files in container ===" && ls -la && \
     if [ -f yarn.lock ]; then \
         echo "=== Installing with yarn ===" && \
         yarn install || exit 1; \
     elif [ -f package-lock.json ]; then \
-        echo "=== Installing with npm ci ===" && \
-        npm ci || exit 1; \
+        echo "=== Installing with npm ci --legacy-peer-deps ===" && \
+        npm ci --legacy-peer-deps || exit 1; \
     elif [ -f package.json ]; then \
-        echo "=== Installing with npm install ===" && \
-        npm install || exit 1; \
+        echo "=== Installing with npm install --legacy-peer-deps ===" && \
+        npm install --legacy-peer-deps || exit 1; \
     else \
         echo "ERROR: No package.json found"; \
         exit 1; \
