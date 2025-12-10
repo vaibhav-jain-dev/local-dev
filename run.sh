@@ -73,6 +73,15 @@ is_port_busy() {
     lsof -Pi :${port} -sTCP:LISTEN -t >/dev/null 2>&1
 }
 
+# Docker Compose command helper (uses v2 if available, fallback to v1)
+docker_compose() {
+    if command -v docker &>/dev/null && docker compose version &>/dev/null; then
+        docker compose "$@"
+    else
+        docker-compose "$@"
+    fi
+}
+
 # ============================================
 # Branch Cache Functions
 # ============================================
@@ -691,7 +700,7 @@ parse_args() {
 
 do_stop() {
     echo -e "${YELLOW}⏹  Stopping services...${NC}"
-    docker-compose down 2>/dev/null || true
+    docker_compose down 2>/dev/null || true
     stop_redis_portforward
     rm -f "$CACHE_FILE"
     echo -e "${GREEN}✓ All services stopped${NC}"
@@ -699,7 +708,7 @@ do_stop() {
 
 do_clean() {
     echo -e "${YELLOW}🧹 Cleaning environment...${NC}"
-    docker-compose down -v 2>/dev/null || true
+    docker_compose down -v 2>/dev/null || true
     docker system prune -af 2>/dev/null || true
     rm -rf cloned docker-compose.yml logs/*
     stop_redis_portforward
@@ -709,9 +718,9 @@ do_clean() {
 do_logs() {
     if [ -n "$TARGET" ]; then
         echo -e "${CYAN}┌─── Logs: $TARGET ───┐${NC}"
-        docker-compose logs --tail=100 -f $TARGET 2>/dev/null || docker logs --tail=100 -f $TARGET 2>&1
+        docker_compose logs --tail=100 -f $TARGET 2>/dev/null || docker logs --tail=100 -f $TARGET 2>&1
     else
-        docker-compose logs -f --tail 100 2>&1
+        docker_compose logs -f --tail 100 2>&1
     fi
 }
 
@@ -730,7 +739,7 @@ do_restart() {
 
     # Stop docker containers
     echo -e "${YELLOW}▶ Stopping Docker containers${NC}"
-    docker-compose down 2>/dev/null || true
+    docker_compose down 2>/dev/null || true
     echo -e "  ${GREEN}✓${NC} Containers stopped"
 
     # Force kill redis port
@@ -870,14 +879,19 @@ do_run() {
 
     end_phase "Phase 2: Docker Configuration"
 
-    # ========== Phase 3: Build (parallel) ==========
+    # ========== Phase 3: Build (parallel with BuildKit) ==========
     start_phase "Phase 3: Building Containers"
 
     echo -e "  ${DIM}Building $service_count container(s) in parallel...${NC}"
 
+    # Enable BuildKit for true parallel builds
+    export COMPOSE_DOCKER_CLI_BUILD=1
+    export DOCKER_BUILDKIT=1
+
     # Capture build output with better formatting
     local build_start=$(now_ms)
-    local build_output=$(docker-compose build --parallel 2>&1)
+    # BuildKit handles parallelism automatically, --parallel is for docker-compose v1 compatibility
+    local build_output=$(docker_compose build --parallel 2>&1)
     local build_status=$?
     local build_end=$(now_ms)
     local build_duration=$((build_end - build_start))
@@ -914,7 +928,7 @@ do_run() {
 
     # Start all containers at once (faster than one-by-one)
     echo -e "  ${DIM}Starting all containers in parallel...${NC}"
-    local up_output=$(docker-compose up -d 2>&1)
+    local up_output=$(docker_compose up -d 2>&1)
     local up_status=$?
 
     # Wait for Redis setup to complete
