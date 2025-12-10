@@ -561,19 +561,18 @@ COMPOSE
             continue
         fi
 
-        cat >> docker-compose.yml << COMPOSE
+        # Handle different service types - build section varies by type
+        if [ "$service_type" = "nextjs" ]; then
+            # Next.js frontend service (e.g., bifrost) - needs GitHub npm token for @orange-health packages
+            cat >> docker-compose.yml << COMPOSE
   ${service}:
     build:
       context: ./cloned/${dir_name}
       dockerfile: dev.Dockerfile
+      args:
+        GITHUB_NPM_TOKEN: \${GITHUB_NPM_TOKEN:-}
     container_name: ${service}
     ports: ["${port}:${port}"]
-COMPOSE
-
-        # Handle different service types
-        if [ "$service_type" = "nextjs" ]; then
-            # Next.js frontend service (e.g., bifrost)
-            cat >> docker-compose.yml << COMPOSE
     volumes:
       - ./cloned/${dir_name}:/app
       - /app/node_modules
@@ -586,6 +585,14 @@ COMPOSE
         elif [ "$service_type" = "nodejs" ]; then
             # Node.js frontend service (e.g., oms-web)
             cat >> docker-compose.yml << COMPOSE
+  ${service}:
+    build:
+      context: ./cloned/${dir_name}
+      dockerfile: dev.Dockerfile
+      args:
+        GITHUB_NPM_TOKEN: \${GITHUB_NPM_TOKEN:-}
+    container_name: ${service}
+    ports: ["${port}:${port}"]
     volumes:
       - ./cloned/${dir_name}:/app
       - /app/node_modules
@@ -596,6 +603,12 @@ COMPOSE
         elif [[ "$service" == "oms-api" ]]; then
             # Go OMS API service
             cat >> docker-compose.yml << COMPOSE
+  ${service}:
+    build:
+      context: ./cloned/${dir_name}
+      dockerfile: dev.Dockerfile
+    container_name: ${service}
+    ports: ["${port}:${port}"]
     volumes:
       - ./cloned/${dir_name}:/go/src/github.com/Orange-Health/oms
     environment:
@@ -605,6 +618,12 @@ COMPOSE
         else
             # Python/Django services (default)
             cat >> docker-compose.yml << COMPOSE
+  ${service}:
+    build:
+      context: ./cloned/${dir_name}
+      dockerfile: dev.Dockerfile
+    container_name: ${service}
+    ports: ["${port}:${port}"]
     volumes:
       - ./cloned/${dir_name}/app:/app
       - ./cloned/${dir_name}:/workspace
