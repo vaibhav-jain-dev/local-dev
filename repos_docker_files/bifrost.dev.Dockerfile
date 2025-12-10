@@ -50,13 +50,14 @@ RUN echo "=== Package files in container ===" && ls -la && \
 # Copy the rest of the application
 COPY . .
 
-# Expose port for Next.js
+# Expose port for Next.js (configurable via PORT env var)
 EXPOSE 3000
 
 # Environment variables for development
 ENV NODE_ENV=development
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV PORT=3000
 
 # Start Next.js in development mode with hot reload
-# Auto-detect available dev script (dev > start)
-CMD ["sh", "-c", "echo '=== Available npm scripts ===' && npm run 2>/dev/null || true && echo '=== Starting application ===' && if grep -q '\"dev\"' package.json 2>/dev/null; then npm run dev; elif grep -q '\"start\"' package.json 2>/dev/null; then npm run start; else echo 'ERROR: No dev/start script found in package.json' && cat package.json && exit 1; fi"]
+# Run next dev directly with PORT env var to override any hardcoded port in package.json
+CMD ["sh", "-c", "echo '=== Available npm scripts ===' && npm run 2>/dev/null || true && echo '=== Starting application on port ${PORT} ===' && npx next dev -p ${PORT}"]

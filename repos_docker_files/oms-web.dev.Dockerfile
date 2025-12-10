@@ -58,5 +58,6 @@ ENV NODE_ENV=development
 ENV PORT=8182
 
 # Start the application in development mode
-# Auto-detect available dev script (dev > start > serve)
-CMD ["sh", "-c", "echo '=== Available npm scripts ===' && npm run 2>/dev/null || true && echo '=== Starting application ===' && if grep -q '\"dev\"' package.json 2>/dev/null; then npm run dev; elif grep -q '\"start\"' package.json 2>/dev/null; then npm run start; elif grep -q '\"serve\"' package.json 2>/dev/null; then npm run serve; else echo 'ERROR: No dev/start/serve script found in package.json' && cat package.json && exit 1; fi"]
+# Use exact script name matching ('"scriptname":') to avoid substring matches like "test-dev"
+# Priority: dev > start > serve
+CMD ["sh", "-c", "echo '=== Available npm scripts ===' && npm run 2>/dev/null || true && echo '=== Starting application on port ${PORT} ===' && if grep -qE '\"dev\"\\s*:' package.json 2>/dev/null; then npm run dev; elif grep -qE '\"start\"\\s*:' package.json 2>/dev/null; then npm run start; elif grep -qE '\"serve\"\\s*:' package.json 2>/dev/null; then npm run serve; else echo 'ERROR: No dev/start/serve script found in package.json' && cat package.json && exit 1; fi"]
