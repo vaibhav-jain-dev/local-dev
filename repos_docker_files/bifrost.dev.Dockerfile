@@ -11,20 +11,25 @@ RUN apk add --no-cache \
     g++ \
     libc6-compat
 
-# Copy package files first for better caching
-# Note: Using explicit file names to fail fast if missing
-COPY package.json ./
-COPY package-lock.json* yarn.lock* ./
+# Copy all package files (use .dockerignore to exclude unwanted files)
+COPY package*.json ./
+COPY yarn.lock* ./
 
-# Install dependencies (only if package.json exists)
-RUN if [ -f yarn.lock ]; then \
-        yarn install --frozen-lockfile; \
+# Install dependencies - try yarn first, then npm
+# Using separate RUN to get better error visibility
+RUN echo "=== Package files in container ===" && ls -la && \
+    if [ -f yarn.lock ]; then \
+        echo "=== Installing with yarn ===" && \
+        yarn install || exit 1; \
     elif [ -f package-lock.json ]; then \
-        npm ci; \
+        echo "=== Installing with npm ci ===" && \
+        npm ci || exit 1; \
     elif [ -f package.json ]; then \
-        npm install; \
+        echo "=== Installing with npm install ===" && \
+        npm install || exit 1; \
     else \
-        echo "No package.json found - skipping dependency install"; \
+        echo "ERROR: No package.json found"; \
+        exit 1; \
     fi
 
 # Copy the rest of the application
