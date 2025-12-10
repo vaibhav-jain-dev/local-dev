@@ -61,6 +61,38 @@ This tool clones multiple repositories, overrides their configurations with envi
 - Git (with SSH access to Orange-Health repositories)
 - `yq` (YAML processor) - install via `brew install yq` or `apt install yq`
 - `kubectl` (for Redis port-forwarding from Kubernetes)
+- `GITHUB_NPM_TOKEN` - GitHub Personal Access Token for `@orange-health` npm packages (see below)
+
+## GitHub NPM Token Setup
+
+Frontend services (bifrost, oms-web) require access to private `@orange-health` packages on GitHub Package Registry.
+
+### 1. Create a GitHub Personal Access Token
+
+1. Go to GitHub → Settings → Developer settings → Personal access tokens → Tokens (classic)
+2. Click "Generate new token (classic)"
+3. Select scope: `read:packages`
+4. Generate and copy the token
+
+### 2. Set the Environment Variable
+
+Add to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.):
+
+```bash
+export GITHUB_NPM_TOKEN="ghp_your_token_here"
+```
+
+Then reload:
+```bash
+source ~/.zshrc  # or ~/.bashrc
+```
+
+### 3. Verify
+
+```bash
+echo $GITHUB_NPM_TOKEN  # Should print your token
+make run  # Should now authenticate successfully
+```
 
 ## Quick Start
 

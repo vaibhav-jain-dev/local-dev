@@ -3,6 +3,10 @@ FROM node:18-alpine
 
 WORKDIR /app
 
+# Build argument for GitHub npm registry authentication
+# Required for @orange-health packages from GitHub Package Registry
+ARG GITHUB_NPM_TOKEN
+
 # Install build dependencies for native npm packages
 RUN apk add --no-cache \
     git \
@@ -14,6 +18,17 @@ RUN apk add --no-cache \
 # Copy all package files (use .dockerignore to exclude unwanted files)
 COPY package*.json ./
 COPY yarn.lock* ./
+
+# Configure npm for GitHub Package Registry authentication
+# This creates .npmrc with the token for @orange-health scope
+RUN if [ -n "$GITHUB_NPM_TOKEN" ]; then \
+        echo "=== Configuring GitHub npm registry for @orange-health ===" && \
+        echo "@orange-health:registry=https://npm.pkg.github.com" >> .npmrc && \
+        echo "//npm.pkg.github.com/:_authToken=${GITHUB_NPM_TOKEN}" >> .npmrc && \
+        echo "=== .npmrc configured ==="; \
+    else \
+        echo "WARNING: GITHUB_NPM_TOKEN not set - private @orange-health packages may fail to install"; \
+    fi
 
 # Install dependencies - try yarn first, then npm
 # Using separate RUN to get better error visibility
