@@ -890,31 +890,48 @@ do_run() {
 
     # Capture build output with better formatting
     local build_start=$(now_ms)
-    # BuildKit handles parallelism automatically, --parallel is for docker-compose v1 compatibility
-    local build_output=$(docker_compose build --parallel 2>&1)
-    local build_status=$?
-    local build_end=$(now_ms)
-    local build_duration=$((build_end - build_start))
+    local build_log="${LOG_DIR}/build_output.log"
 
-    # Show relevant build output
-    echo "$build_output" | while IFS= read -r line; do
-        if echo "$line" | grep -qE "Building|Step|Successfully built|ERROR|error:"; then
-            # Extract service name from "Building <service>"
-            if echo "$line" | grep -q "Building "; then
-                local svc=$(echo "$line" | sed 's/Building //' | awk '{print $1}')
-                echo -e "  ${CYAN}→${NC} Building ${BOLD}$svc${NC}..."
-            elif echo "$line" | grep -q "Successfully built"; then
-                echo -e "    ${GREEN}✓${NC} image ready"
-            elif echo "$line" | grep -qiE "ERROR|error:"; then
-                echo -e "    ${RED}$line${NC}"
+    # BuildKit handles parallelism automatically, --parallel is for docker-compose v1 compatibility
+    # Use tee to both capture and show progress
+    docker_compose build --parallel 2>&1 | tee "$build_log" | while IFS= read -r line; do
+        # Show progress indicators
+        if echo "$line" | grep -qE "^\s*#[0-9]+ \["; then
+            # BuildKit progress line - show service being built
+            local svc=$(echo "$line" | grep -oE '\[[a-zA-Z0-9_-]+ ' | head -1 | tr -d '[ ')
+            if [ -n "$svc" ]; then
+                echo -e "  ${CYAN}→${NC} ${BOLD}$svc${NC}: $line" | head -c 100
+                echo ""
             fi
+        elif echo "$line" | grep -qiE "error|failed|exited with code|exit code"; then
+            echo -e "    ${RED}$line${NC}"
         fi
     done
+
+    # Check build status from the log (pipe status is lost)
+    local build_status=0
+    if grep -qiE "ERROR:|failed to solve|exited with code [1-9]|exit code: [1-9]" "$build_log" 2>/dev/null; then
+        build_status=1
+    fi
+
+    local build_end=$(now_ms)
+    local build_duration=$((build_end - build_start))
 
     if [ $build_status -eq 0 ]; then
         echo -e "  ${GREEN}✓${NC} All containers built ${DIM}($(format_duration $build_duration))${NC}"
     else
         echo -e "  ${RED}✗ Build failed${NC}"
+        echo -e "  ${YELLOW}Build error details:${NC}"
+        # Show the actual error - extract relevant lines around ERROR
+        grep -iE "error|failed|npm ERR|yarn error|exited with code|exit code" "$build_log" 2>/dev/null | tail -20 | while IFS= read -r line; do
+            echo -e "    ${RED}$line${NC}"
+        done
+        # Also show the full context around the first error
+        echo -e "\n  ${YELLOW}Context around error:${NC}"
+        grep -B5 -A10 -iE "exited with code [1-9]|exit code: [1-9]|npm ERR|yarn error" "$build_log" 2>/dev/null | head -30 | while IFS= read -r line; do
+            echo -e "    ${DIM}$line${NC}"
+        done
+        echo -e "\n  ${YELLOW}Full build log:${NC} $build_log"
     fi
 
     end_phase "Phase 3: Building Containers"

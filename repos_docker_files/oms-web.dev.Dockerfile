@@ -16,15 +16,24 @@ RUN apk add --no-cache \
 COPY package.json ./
 COPY package-lock.json* yarn.lock* ./
 
-# Install dependencies (only if package.json exists)
-RUN if [ -f yarn.lock ]; then \
-        yarn install --frozen-lockfile; \
+# Install dependencies with verbose error output
+RUN set -ex && \
+    echo "=== Checking for package files ===" && \
+    ls -la package*.json yarn.lock 2>/dev/null || true && \
+    if [ -f yarn.lock ]; then \
+        echo "=== Installing with yarn (frozen-lockfile) ===" && \
+        yarn install --frozen-lockfile --verbose 2>&1 || { echo "Yarn install failed with exit code $?"; exit 1; }; \
     elif [ -f package-lock.json ]; then \
-        npm ci; \
+        echo "=== Installing with npm ci ===" && \
+        npm ci 2>&1 || { echo "npm ci failed with exit code $?"; exit 1; }; \
     elif [ -f package.json ]; then \
-        npm install; \
+        echo "=== Installing with npm install ===" && \
+        npm install 2>&1 || { echo "npm install failed with exit code $?"; exit 1; }; \
     else \
-        echo "No package.json found - skipping dependency install"; \
+        echo "ERROR: No package.json found - this is likely a build context issue"; \
+        echo "Build context files:"; \
+        ls -la; \
+        exit 1; \
     fi
 
 # Copy the rest of the application
