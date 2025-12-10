@@ -32,6 +32,7 @@ SERVICES=""
 ACTION=""
 TARGET=""
 REFRESH="false"
+INCLUDE_APP="false"
 
 # ============================================
 # Utility Functions
@@ -531,12 +532,132 @@ setup_repository() {
     return 0
 }
 
+# Setup emulator app (clone and prepare for script execution)
+setup_emulator() {
+    local emulator=$1
+    local repo=$(yq eval ".emulators.\"${emulator}\".git_repo" $CONFIG_FILE 2>/dev/null)
+    local branch=$(yq eval ".emulators.\"${emulator}\".git_branch" $CONFIG_FILE 2>/dev/null)
+    local script=$(yq eval ".emulators.\"${emulator}\".script" $CONFIG_FILE 2>/dev/null)
+
+    [ "$repo" = "null" ] || [ -z "$repo" ] && { echo -e "    ${RED}✗ No git_repo configured for $emulator${NC}"; return 1; }
+    [ "$branch" = "null" ] && branch="main"
+    [ "$script" = "null" ] && script="run-android-emulator.sh"
+
+    local dir_name=$(basename "$repo" .git)
+    local repo_short=$(echo "$repo" | sed 's|.*github.com[:/]||')
+
+    start_operation "setup:$emulator"
+
+    echo -e "  ${BOLD}$emulator${NC} ${DIM}($repo_short → $branch)${NC} ${MAGENTA}[emulator]${NC}"
+
+    # Clone if needed
+    if [ ! -d "cloned/$dir_name/.git" ]; then
+        echo -n "    ├─ cloning..."
+        start_operation "clone:$emulator"
+        local clone_success=false
+        for attempt in 1 2 3; do
+            if git clone "$repo" "cloned/$dir_name" >/dev/null 2>&1; then
+                clone_success=true
+                break
+            fi
+            [ $attempt -lt 3 ] && echo -n " retry $((attempt+1))..."
+            sleep $((RANDOM % 3 + 1))
+            rm -rf "cloned/$dir_name" 2>/dev/null
+        done
+        end_operation "clone:$emulator"
+
+        if [ "$clone_success" = false ]; then
+            echo -e " ${RED}✗ failed${NC}"
+            return 1
+        fi
+        echo -e " ${GREEN}✓${NC}"
+    else
+        echo -e "    ├─ repo exists ${GREEN}✓${NC}"
+    fi
+
+    # Handle branch checkout
+    if cd "cloned/$dir_name" 2>/dev/null; then
+        current_branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+        git fetch origin >/dev/null 2>&1 || true
+
+        if [ "$current_branch" != "$branch" ]; then
+            echo -n "    ├─ switching to $branch..."
+            git reset --hard HEAD >/dev/null 2>&1 || true
+            git clean -fd >/dev/null 2>&1 || true
+
+            if git checkout "$branch" >/dev/null 2>&1 || git checkout -b "$branch" "origin/$branch" >/dev/null 2>&1; then
+                echo -e " ${GREEN}✓${NC}"
+            else
+                echo -e " ${RED}✗ branch not found${NC}"
+                cd - >/dev/null 2>&1
+                return 1
+            fi
+        else
+            local commit=$(git rev-parse --short HEAD 2>/dev/null)
+            echo -e "    ├─ on $branch ${DIM}@$commit${NC} ${GREEN}✓${NC}"
+        fi
+        cd - >/dev/null 2>&1
+    fi
+
+    # Check script exists
+    if [ -f "cloned/$dir_name/$script" ]; then
+        chmod +x "cloned/$dir_name/$script"
+        echo -e "    └─ script ready: $script ${GREEN}✓${NC}"
+    else
+        echo -e "    └─ ${RED}✗ script not found: $script${NC}"
+        return 1
+    fi
+
+    end_operation "setup:$emulator"
+    return 0
+}
+
+# Setup worker (uses parent repo, different Dockerfile)
+setup_worker() {
+    local worker=$1
+    local parent=$(yq eval ".workers.\"${worker}\".parent" $CONFIG_FILE 2>/dev/null)
+    local port=$(yq eval ".workers.\"${worker}\".port" $CONFIG_FILE 2>/dev/null)
+
+    [ "$parent" = "null" ] || [ -z "$parent" ] && { echo -e "    ${RED}✗ No parent configured for $worker${NC}"; return 1; }
+
+    # Get parent repo info
+    local parent_repo=$(yq eval ".services.\"${parent}\".git_repo" $CONFIG_FILE 2>/dev/null)
+    local dir_name=$(basename "$parent_repo" .git)
+
+    start_operation "setup:$worker"
+
+    echo -e "  ${BOLD}$worker${NC} ${DIM}(uses $parent repo)${NC} ${BLUE}[worker]${NC}"
+
+    # Check parent repo exists
+    if [ ! -d "cloned/$dir_name/.git" ]; then
+        echo -e "    └─ ${RED}✗ parent repo not cloned (run $parent first)${NC}"
+        end_operation "setup:$worker"
+        return 1
+    fi
+    echo -e "    ├─ parent repo exists ${GREEN}✓${NC}"
+
+    # Copy worker Dockerfile
+    local dockerfile_path=$(get_dockerfile_path "$worker")
+    if [ -f "$dockerfile_path" ]; then
+        cp "$dockerfile_path" "cloned/$dir_name/${worker}.dev.Dockerfile"
+        echo -e "    └─ dockerfile ready ${GREEN}✓${NC}"
+    else
+        echo -e "    └─ ${RED}✗ no Dockerfile at $dockerfile_path${NC}"
+        end_operation "setup:$worker"
+        return 1
+    fi
+
+    end_operation "setup:$worker"
+    return 0
+}
+
 # ============================================
 # Docker Functions
 # ============================================
 
 generate_docker_compose() {
     local services_to_include="$1"
+    local workers_to_include="$2"
     local skipped_services=""
 
     cat > docker-compose.yml << 'COMPOSE'
@@ -644,6 +765,41 @@ COMPOSE
 COMPOSE
     done
 
+    # Add workers to docker-compose
+    for worker in $workers_to_include; do
+        local parent=$(yq eval ".workers.\"${worker}\".parent" $CONFIG_FILE 2>/dev/null)
+        local port=$(yq eval ".workers.\"${worker}\".port" $CONFIG_FILE 2>/dev/null)
+        local parent_repo=$(yq eval ".services.\"${parent}\".git_repo" $CONFIG_FILE 2>/dev/null)
+        local dir_name=$(basename "$parent_repo" .git)
+
+        # Check for missing dockerfile
+        if [ ! -f "cloned/$dir_name/${worker}.dev.Dockerfile" ]; then
+            echo -e "  ${YELLOW}⚠ Skipping $worker: cloned/$dir_name/${worker}.dev.Dockerfile not found${NC}"
+            continue
+        fi
+
+        # Workers use Go OMS style
+        cat >> docker-compose.yml << COMPOSE
+  ${worker}:
+    build:
+      context: ./cloned/${dir_name}
+      dockerfile: ${worker}.dev.Dockerfile
+    container_name: ${worker}
+    ports: ["${port}:${port}"]
+    volumes:
+      - ./cloned/${dir_name}:/go/src/github.com/Orange-Health/oms
+    environment:
+      CGO_ENABLED: 1
+      GO111MODULE: on
+    networks: [oh-network]
+    platform: linux/amd64
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+
+COMPOSE
+    done
+
     cat >> docker-compose.yml << 'COMPOSE'
 networks:
   oh-network:
@@ -701,11 +857,13 @@ parse_args() {
             ;;
     esac
 
-    # Check for refresh flag (can be anywhere in args)
+    # Check for refresh and --include-app flags (can be anywhere in args)
     local remaining_args=""
     for arg in "$@"; do
         if [ "$arg" = "refresh" ]; then
             REFRESH="true"
+        elif [ "$arg" = "--include-app" ]; then
+            INCLUDE_APP="true"
         else
             remaining_args="$remaining_args $arg"
         fi
@@ -803,9 +961,15 @@ do_run() {
     # Determine services to run
     local services_to_run=""
     if [ -n "$SERVICES" ]; then
-        # Validate each service exists in config
+        # Validate each service exists in config (check services, workers, or emulators)
         for svc in $SERVICES; do
-            if yq eval ".services.\"${svc}\"" $CONFIG_FILE >/dev/null 2>&1; then
+            if yq eval ".services.\"${svc}\"" $CONFIG_FILE 2>/dev/null | grep -qv "null"; then
+                services_to_run="$services_to_run $svc"
+            elif yq eval ".workers.\"${svc}\"" $CONFIG_FILE 2>/dev/null | grep -qv "null"; then
+                # Worker specified directly - will be handled below
+                services_to_run="$services_to_run $svc"
+            elif yq eval ".emulators.\"${svc}\"" $CONFIG_FILE 2>/dev/null | grep -qv "null"; then
+                # Emulator specified directly - will be handled below
                 services_to_run="$services_to_run $svc"
             else
                 echo -e "${RED}Service not found: $svc${NC}"
@@ -822,9 +986,44 @@ do_run() {
     fi
 
     services_to_run=$(echo $services_to_run | xargs)  # trim whitespace
-    local service_count=$(echo $services_to_run | wc -w | xargs)
 
-    if [ -z "$services_to_run" ]; then
+    # Determine workers to run (workers whose parent is in services_to_run)
+    local workers_to_run=""
+    for worker in $(yq eval '.workers | keys | .[]' $CONFIG_FILE 2>/dev/null); do
+        local parent=$(yq eval ".workers.\"${worker}\".parent" $CONFIG_FILE 2>/dev/null)
+        # Check if parent service is in services_to_run or worker was explicitly requested
+        if echo "$services_to_run" | grep -qw "$parent" || echo "$services_to_run" | grep -qw "$worker"; then
+            workers_to_run="$workers_to_run $worker"
+            # Remove worker from services_to_run if it was explicitly requested
+            services_to_run=$(echo "$services_to_run" | sed "s/\b$worker\b//g" | xargs)
+        fi
+    done
+    workers_to_run=$(echo $workers_to_run | xargs)
+
+    # Determine emulators to run (only if --include-app flag is passed)
+    local emulators_to_run=""
+    if [ "$INCLUDE_APP" = "true" ]; then
+        for emu in $(yq eval '.emulators | keys | .[]' $CONFIG_FILE 2>/dev/null); do
+            emulators_to_run="$emulators_to_run $emu"
+            # Remove emulator from services_to_run if it was explicitly requested
+            services_to_run=$(echo "$services_to_run" | sed "s/\b$emu\b//g" | xargs)
+        done
+    else
+        # Check if any emulator was explicitly requested
+        for emu in $(yq eval '.emulators | keys | .[]' $CONFIG_FILE 2>/dev/null); do
+            if echo "$services_to_run" | grep -qw "$emu"; then
+                emulators_to_run="$emulators_to_run $emu"
+                services_to_run=$(echo "$services_to_run" | sed "s/\b$emu\b//g" | xargs)
+            fi
+        done
+    fi
+    emulators_to_run=$(echo $emulators_to_run | xargs)
+
+    local service_count=$(echo $services_to_run | wc -w | xargs)
+    local worker_count=$(echo $workers_to_run | wc -w | xargs)
+    local emulator_count=$(echo $emulators_to_run | wc -w | xargs)
+
+    if [ -z "$services_to_run" ] && [ -z "$workers_to_run" ] && [ -z "$emulators_to_run" ]; then
         echo -e "${RED}No services to run${NC}"
         exit 1
     fi
@@ -836,21 +1035,27 @@ do_run() {
 
     echo -e "${BOLD}Namespace:${NC} $NAMESPACE"
     echo -e "${BOLD}Services:${NC} $service_count services${eta_line}"
+    [ "$worker_count" -gt 0 ] && echo -e "${BOLD}Workers:${NC} $worker_count workers"
+    [ "$emulator_count" -gt 0 ] && echo -e "${BOLD}Emulators:${NC} $emulator_count apps"
     [ "$REFRESH" = "true" ] && echo -e "${BOLD}Refresh:${NC} ${GREEN}yes${NC} (will pull latest code)"
+    [ "$INCLUDE_APP" = "true" ] && echo -e "${BOLD}Include Apps:${NC} ${GREEN}yes${NC} (Android emulators)"
 
     # ========== Phase 1: Repository Setup (Parallel) ==========
     start_phase "Phase 1: Repository Setup"
 
     local services_ready=""
+    local workers_ready=""
+    local emulators_ready=""
     local failed_services=""
 
     # Create temp directory for parallel job results
     local parallel_tmp=$(mktemp -d)
     local pids=""
 
-    echo -e "  ${DIM}Setting up $service_count repositories in parallel...${NC}"
+    local total_setup_count=$((service_count + emulator_count))
+    [ "$total_setup_count" -gt 0 ] && echo -e "  ${DIM}Setting up $total_setup_count repositories in parallel...${NC}"
 
-    # Launch all repository setups in parallel
+    # Launch all repository setups in parallel (services + emulators)
     for service in $services_to_run; do
         (
             if setup_repository "$service" > "${parallel_tmp}/${service}.log" 2>&1; then
@@ -862,19 +1067,29 @@ do_run() {
         pids="$pids $!"
     done
 
+    # Launch emulator setups in parallel
+    for emulator in $emulators_to_run; do
+        (
+            if setup_emulator "$emulator" > "${parallel_tmp}/${emulator}.log" 2>&1; then
+                echo "success" > "${parallel_tmp}/${emulator}.status"
+            else
+                echo "failed" > "${parallel_tmp}/${emulator}.status"
+            fi
+        ) &
+        pids="$pids $!"
+    done
+
     # Wait for all parallel jobs to complete
     for pid in $pids; do
         wait $pid 2>/dev/null || true
     done
 
-    # Collect results and display output
+    # Collect results and display output for services
     for service in $services_to_run; do
-        # Show the captured output
         if [ -f "${parallel_tmp}/${service}.log" ]; then
             cat "${parallel_tmp}/${service}.log"
         fi
 
-        # Check status
         if [ -f "${parallel_tmp}/${service}.status" ]; then
             local status=$(cat "${parallel_tmp}/${service}.status")
             if [ "$status" = "success" ]; then
@@ -882,7 +1097,6 @@ do_run() {
             else
                 failed_services="$failed_services $service"
                 echo -e "  ${RED}✗ $service setup failed${NC}"
-                # Show last few lines of log for debugging
                 if [ -f "${parallel_tmp}/${service}.log" ]; then
                     echo -e "    ${DIM}Last few lines of setup log:${NC}"
                     tail -5 "${parallel_tmp}/${service}.log" 2>/dev/null | sed 's/^/    /'
@@ -894,12 +1108,44 @@ do_run() {
         fi
     done
 
+    # Collect results for emulators
+    for emulator in $emulators_to_run; do
+        if [ -f "${parallel_tmp}/${emulator}.log" ]; then
+            cat "${parallel_tmp}/${emulator}.log"
+        fi
+
+        if [ -f "${parallel_tmp}/${emulator}.status" ]; then
+            local status=$(cat "${parallel_tmp}/${emulator}.status")
+            if [ "$status" = "success" ]; then
+                emulators_ready="$emulators_ready $emulator"
+            else
+                failed_services="$failed_services $emulator"
+                echo -e "  ${RED}✗ $emulator setup failed${NC}"
+            fi
+        fi
+    done
+
+    # Setup workers (after services, as they depend on parent repos)
+    if [ -n "$workers_to_run" ]; then
+        echo -e "  ${DIM}Setting up $worker_count workers...${NC}"
+        for worker in $workers_to_run; do
+            if setup_worker "$worker" > "${parallel_tmp}/${worker}.log" 2>&1; then
+                workers_ready="$workers_ready $worker"
+            else
+                failed_services="$failed_services $worker"
+            fi
+            cat "${parallel_tmp}/${worker}.log" 2>/dev/null
+        done
+    fi
+
     # Cleanup temp directory
     rm -rf "$parallel_tmp"
 
     services_ready=$(echo $services_ready | xargs)
+    workers_ready=$(echo $workers_ready | xargs)
+    emulators_ready=$(echo $emulators_ready | xargs)
 
-    if [ -z "$services_ready" ]; then
+    if [ -z "$services_ready" ] && [ -z "$workers_ready" ] && [ -z "$emulators_ready" ]; then
         echo -e "  ${RED}No services ready to run${NC}"
         exit 1
     fi
@@ -914,7 +1160,8 @@ do_run() {
     start_phase "Phase 2: Docker Configuration"
 
     echo -e "  Generating docker-compose.yml for: ${BOLD}$services_ready${NC}"
-    generate_docker_compose "$services_ready"
+    [ -n "$workers_ready" ] && echo -e "  Workers: ${BOLD}$workers_ready${NC}"
+    generate_docker_compose "$services_ready" "$workers_ready"
     cache_containers
     local compose_service_count=$(grep -c "^  [a-z]" docker-compose.yml 2>/dev/null || echo 0)
     echo -e "  ${GREEN}✓${NC} docker-compose.yml generated with $compose_service_count service(s)"
@@ -1024,6 +1271,28 @@ do_run() {
     sleep 2
     end_phase "Phase 4: Redis + Starting Containers"
 
+    # ========== Phase 5: Start Emulator Scripts ==========
+    if [ -n "$emulators_ready" ]; then
+        start_phase "Phase 5: Starting Android Emulators"
+
+        for emulator in $emulators_ready; do
+            local repo=$(yq eval ".emulators.\"${emulator}\".git_repo" $CONFIG_FILE 2>/dev/null)
+            local script=$(yq eval ".emulators.\"${emulator}\".script" $CONFIG_FILE 2>/dev/null)
+            local dir_name=$(basename "$repo" .git)
+
+            echo -e "  ${MAGENTA}▶${NC} Starting $emulator..."
+            if [ -f "cloned/$dir_name/$script" ]; then
+                # Run emulator script in background
+                (cd "cloned/$dir_name" && ./$script > "../../../logs/${emulator}.log" 2>&1) &
+                echo -e "    └─ script started ${GREEN}✓${NC} (logs: logs/${emulator}.log)"
+            else
+                echo -e "    └─ ${RED}✗ script not found${NC}"
+            fi
+        done
+
+        end_phase "Phase 5: Starting Android Emulators"
+    fi
+
     # Save metrics for this run
     save_run_metrics
 
@@ -1037,6 +1306,7 @@ do_run() {
     local running_count=0
     local failed_count=0
 
+    # Show services status
     for service in $services_ready; do
         local port=$(yq eval ".services.\"${service}\".port" $CONFIG_FILE 2>/dev/null)
 
@@ -1049,6 +1319,28 @@ do_run() {
             docker logs --tail=3 $service 2>&1 | sed 's/^/    /'
             failed_count=$((failed_count + 1))
         fi
+    done
+
+    # Show workers status
+    for worker in $workers_ready; do
+        local port=$(yq eval ".workers.\"${worker}\".port" $CONFIG_FILE 2>/dev/null)
+
+        if docker ps --format "{{.Names}}" 2>/dev/null | grep -q "^${worker}$"; then
+            echo -e "${GREEN}✓${NC} ${BOLD}$worker${NC} ${BLUE}[worker]${NC}"
+            echo -e "  └─ http://localhost:${port}"
+            running_count=$((running_count + 1))
+        else
+            echo -e "${RED}✗${NC} ${BOLD}$worker${NC} ${BLUE}[worker]${NC} - failed"
+            docker logs --tail=3 $worker 2>&1 | sed 's/^/    /'
+            failed_count=$((failed_count + 1))
+        fi
+    done
+
+    # Show emulators status
+    for emulator in $emulators_ready; do
+        echo -e "${GREEN}✓${NC} ${BOLD}$emulator${NC} ${MAGENTA}[emulator]${NC}"
+        echo -e "  └─ logs: logs/${emulator}.log"
+        running_count=$((running_count + 1))
     done
 
     # Show run summary

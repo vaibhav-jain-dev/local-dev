@@ -65,6 +65,47 @@ services:
         dest: config/config.js
         required: true
 
+  # OMS API with workers - workers share the same repo/branch/clone folder
+  # Workers are defined here and get their own Dockerfiles
+  # oms-api:
+  #   workers:
+  #     oms-worker:
+  #       dockerfile: oms-worker.dev.Dockerfile
+  #       port: 8081
+  #     oms-worker-scheduler:
+  #       dockerfile: oms-worker-scheduler.dev.Dockerfile
+  #       port: 8082
+  #     oms-consumer-worker:
+  #       dockerfile: oms-consumer-worker.dev.Dockerfile
+  #       port: 8083
+
+# Workers - share repo with oms-api but have different Dockerfiles
+workers:
+  oms-worker:
+    parent: oms-api
+    port: 8081
+
+  oms-worker-scheduler:
+    parent: oms-api
+    port: 8082
+
+  oms-consumer-worker:
+    parent: oms-api
+    port: 8083
+
+# Emulator Apps - run bash scripts instead of Docker containers
+# These are only included when --include-app flag is passed
+emulators:
+  patient-app:
+    git_repo: git@github.com:Orange-Health/patient-app.git
+    git_branch: copilot/add-dockerized-android-emulator
+    script: run-android-emulator.sh
+
+  doctor-app:
+    git_repo: git@github.com:Orange-Health/doctor-app.git
+    git_branch: copilot/add-dockerized-android-emulator-script
+    script: run-android-emulator.sh
+
 redis:
   namespace: s5
   deployment: redis
