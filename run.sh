@@ -354,6 +354,11 @@ setup_repository() {
     local repo=$(yq eval ".services.\"${service}\".git_repo" $CONFIG_FILE 2>/dev/null)
     local branch=$(yq eval ".services.\"${service}\".git_branch" $CONFIG_FILE 2>/dev/null)
     local always_refresh=$(yq eval ".services.\"${service}\".always-refresh" $CONFIG_FILE 2>/dev/null)
+
+    # Handle yq returning "null" for missing values
+    [ "$repo" = "null" ] || [ -z "$repo" ] && { echo -e "    ${RED}✗ No git_repo configured for $service${NC}"; return 1; }
+    [ "$branch" = "null" ] && branch="main"
+
     local dir_name=$(basename "$repo" .git)
     local repo_short=$(echo "$repo" | sed 's|.*github.com[:/]||')
 
@@ -532,6 +537,7 @@ setup_repository() {
 
 generate_docker_compose() {
     local services_to_include="$1"
+    local skipped_services=""
 
     cat > docker-compose.yml << 'COMPOSE'
 services:
@@ -543,8 +549,17 @@ COMPOSE
         local service_type=$(yq eval ".services.\"${service}\".type" $CONFIG_FILE 2>/dev/null)
         local dir_name=$(basename "$repo" .git)
 
-        [ ! -d "cloned/$dir_name" ] && continue
-        [ ! -f "cloned/$dir_name/dev.Dockerfile" ] && continue
+        # Check for missing directory or dockerfile with clear error messages
+        if [ ! -d "cloned/$dir_name" ]; then
+            echo -e "  ${YELLOW}⚠ Skipping $service: cloned/$dir_name directory not found${NC}"
+            skipped_services="$skipped_services $service"
+            continue
+        fi
+        if [ ! -f "cloned/$dir_name/dev.Dockerfile" ]; then
+            echo -e "  ${YELLOW}⚠ Skipping $service: cloned/$dir_name/dev.Dockerfile not found${NC}"
+            skipped_services="$skipped_services $service"
+            continue
+        fi
 
         cat >> docker-compose.yml << COMPOSE
   ${service}:
@@ -847,9 +862,16 @@ do_run() {
                 services_ready="$services_ready $service"
             else
                 failed_services="$failed_services $service"
+                echo -e "  ${RED}✗ $service setup failed${NC}"
+                # Show last few lines of log for debugging
+                if [ -f "${parallel_tmp}/${service}.log" ]; then
+                    echo -e "    ${DIM}Last few lines of setup log:${NC}"
+                    tail -5 "${parallel_tmp}/${service}.log" 2>/dev/null | sed 's/^/    /'
+                fi
             fi
         else
             failed_services="$failed_services $service"
+            echo -e "  ${RED}✗ $service setup incomplete (no status file)${NC}"
         fi
     done
 
@@ -872,10 +894,11 @@ do_run() {
     # ========== Phase 2: Docker Configuration ==========
     start_phase "Phase 2: Docker Configuration"
 
-    echo -n "  Generating docker-compose.yml..."
+    echo -e "  Generating docker-compose.yml for: ${BOLD}$services_ready${NC}"
     generate_docker_compose "$services_ready"
     cache_containers
-    echo -e " ${GREEN}✓${NC}"
+    local compose_service_count=$(grep -c "^  [a-z]" docker-compose.yml 2>/dev/null || echo 0)
+    echo -e "  ${GREEN}✓${NC} docker-compose.yml generated with $compose_service_count service(s)"
 
     end_phase "Phase 2: Docker Configuration"
 
