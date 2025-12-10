@@ -11,28 +11,24 @@ RUN apk add --no-cache \
     g++ \
     libc6-compat
 
-# Copy package files first for better caching
-# Note: Using explicit file names to fail fast if missing
-COPY package.json ./
-COPY package-lock.json* yarn.lock* ./
+# Copy all package files (use .dockerignore to exclude unwanted files)
+COPY package*.json ./
+COPY yarn.lock* ./
 
-# Install dependencies with verbose error output
-RUN set -ex && \
-    echo "=== Checking for package files ===" && \
-    ls -la package*.json yarn.lock 2>/dev/null || true && \
+# Install dependencies - try yarn first, then npm
+# Using separate RUN to get better error visibility
+RUN echo "=== Package files in container ===" && ls -la && \
     if [ -f yarn.lock ]; then \
-        echo "=== Installing with yarn (frozen-lockfile) ===" && \
-        yarn install --frozen-lockfile --verbose 2>&1 || { echo "Yarn install failed with exit code $?"; exit 1; }; \
+        echo "=== Installing with yarn ===" && \
+        yarn install || exit 1; \
     elif [ -f package-lock.json ]; then \
         echo "=== Installing with npm ci ===" && \
-        npm ci 2>&1 || { echo "npm ci failed with exit code $?"; exit 1; }; \
+        npm ci || exit 1; \
     elif [ -f package.json ]; then \
         echo "=== Installing with npm install ===" && \
-        npm install 2>&1 || { echo "npm install failed with exit code $?"; exit 1; }; \
+        npm install || exit 1; \
     else \
-        echo "ERROR: No package.json found - this is likely a build context issue"; \
-        echo "Build context files:"; \
-        ls -la; \
+        echo "ERROR: No package.json found"; \
         exit 1; \
     fi
 

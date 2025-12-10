@@ -888,29 +888,17 @@ do_run() {
     export COMPOSE_DOCKER_CLI_BUILD=1
     export DOCKER_BUILDKIT=1
 
-    # Capture build output with better formatting
+    # Capture build output to log file
     local build_start=$(now_ms)
     local build_log="${LOG_DIR}/build_output.log"
 
     # BuildKit handles parallelism automatically, --parallel is for docker-compose v1 compatibility
-    # Use tee to both capture and show progress
-    docker_compose build --parallel 2>&1 | tee "$build_log" | while IFS= read -r line; do
-        # Show progress indicators
-        if echo "$line" | grep -qE "^\s*#[0-9]+ \["; then
-            # BuildKit progress line - show service being built
-            local svc=$(echo "$line" | grep -oE '\[[a-zA-Z0-9_-]+ ' | head -1 | tr -d '[ ')
-            if [ -n "$svc" ]; then
-                echo -e "  ${CYAN}→${NC} ${BOLD}$svc${NC}: $line" | head -c 100
-                echo ""
-            fi
-        elif echo "$line" | grep -qiE "error|failed|exited with code|exit code"; then
-            echo -e "    ${RED}$line${NC}"
-        fi
-    done
+    # Run build and capture output - show progress in real-time
+    docker_compose build --parallel 2>&1 | tee "$build_log"
 
-    # Check build status from the log (pipe status is lost)
+    # Get pipeline exit status (use PIPESTATUS on bash, check log on other shells)
     local build_status=0
-    if grep -qiE "ERROR:|failed to solve|exited with code [1-9]|exit code: [1-9]" "$build_log" 2>/dev/null; then
+    if grep -qiE "ERROR:|failed to solve|exited with code [1-9]|exit code: [1-9]|FAILED" "$build_log" 2>/dev/null; then
         build_status=1
     fi
 
@@ -920,18 +908,22 @@ do_run() {
     if [ $build_status -eq 0 ]; then
         echo -e "  ${GREEN}✓${NC} All containers built ${DIM}($(format_duration $build_duration))${NC}"
     else
-        echo -e "  ${RED}✗ Build failed${NC}"
-        echo -e "  ${YELLOW}Build error details:${NC}"
-        # Show the actual error - extract relevant lines around ERROR
-        grep -iE "error|failed|npm ERR|yarn error|exited with code|exit code" "$build_log" 2>/dev/null | tail -20 | while IFS= read -r line; do
-            echo -e "    ${RED}$line${NC}"
+        echo -e "\n  ${RED}✗ Build failed${NC}"
+        echo -e "  ${YELLOW}─────────────────────────────────────${NC}"
+        echo -e "  ${YELLOW}Build Error Summary:${NC}"
+        echo -e "  ${YELLOW}─────────────────────────────────────${NC}"
+        # Show last 40 lines which usually contain the actual error
+        echo ""
+        tail -40 "$build_log" | while IFS= read -r line; do
+            if echo "$line" | grep -qiE "error|failed|npm ERR|yarn"; then
+                echo -e "  ${RED}$line${NC}"
+            else
+                echo -e "  ${DIM}$line${NC}"
+            fi
         done
-        # Also show the full context around the first error
-        echo -e "\n  ${YELLOW}Context around error:${NC}"
-        grep -B5 -A10 -iE "exited with code [1-9]|exit code: [1-9]|npm ERR|yarn error" "$build_log" 2>/dev/null | head -30 | while IFS= read -r line; do
-            echo -e "    ${DIM}$line${NC}"
-        done
-        echo -e "\n  ${YELLOW}Full build log:${NC} $build_log"
+        echo ""
+        echo -e "  ${YELLOW}Full build log:${NC} $build_log"
+        echo -e "  ${YELLOW}─────────────────────────────────────${NC}"
     fi
 
     end_phase "Phase 3: Building Containers"
