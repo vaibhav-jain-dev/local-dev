@@ -43,4 +43,5 @@ ENV NODE_ENV=development
 ENV PORT=8182
 
 # Start the application in development mode
-CMD ["npm", "run", "dev"]
+# Auto-detect available dev script (dev > start > serve)
+CMD ["sh", "-c", "if npm run 2>/dev/null | grep -q '\"dev\"'; then npm run dev; elif npm run 2>/dev/null | grep -q '\"start\"'; then npm run start; elif npm run 2>/dev/null | grep -q '\"serve\"'; then npm run serve; else echo 'No dev/start/serve script found' && npm run; fi"]

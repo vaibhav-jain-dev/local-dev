@@ -43,4 +43,5 @@ ENV NODE_ENV=development
 ENV NEXT_TELEMETRY_DISABLED=1
 
 # Start Next.js in development mode with hot reload
-CMD ["npm", "run", "dev"]
+# Auto-detect available dev script (dev > start)
+CMD ["sh", "-c", "if npm run 2>/dev/null | grep -q '\"dev\"'; then npm run dev; elif npm run 2>/dev/null | grep -q '\"start\"'; then npm run start; else echo 'No dev/start script found' && npm run; fi"]
