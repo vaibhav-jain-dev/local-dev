@@ -1284,43 +1284,115 @@ do_run() {
     local build_start=$(now_ms)
     local build_log="${LOG_DIR}/build_output.log"
 
-    # BuildKit handles parallelism automatically, --parallel is for docker-compose v1 compatibility
-    # --progress is a global compose flag and must come BEFORE the build subcommand
-    # Use --progress=plain since output is piped to tee for logging (tty mode requires direct terminal)
-    # Run build and capture output - show progress in real-time
-    docker_compose --progress=plain build --parallel 2>&1 | tee "$build_log"
+    # Build each service individually in parallel to allow continuation when one fails
+    # This prevents one failing build from cancelling others (default BuildKit behavior)
+    local build_tmp=$(mktemp -d)
+    local build_pids=""
+    local all_services="$services_ready"
+    # Add workers to the build list (format is "worker:parent", extract worker name)
+    for worker_entry in $workers_ready; do
+        local worker_name="${worker_entry%%:*}"
+        all_services="$all_services $worker_name"
+    done
 
-    # Get pipeline exit status (use PIPESTATUS on bash, check log on other shells)
-    local build_status=0
-    if grep -qiE "ERROR:|failed to solve|exited with code [1-9]|exit code: [1-9]|FAILED" "$build_log" 2>/dev/null; then
-        build_status=1
-    fi
+    # Launch builds in parallel for each service
+    for svc in $all_services; do
+        (
+            local svc_log="${build_tmp}/${svc}.log"
+            docker_compose --progress=plain build "$svc" > "$svc_log" 2>&1
+            local exit_code=$?
+            if [ $exit_code -eq 0 ] && ! grep -qiE "ERROR:|failed to solve|exited with code [1-9]|exit code: [1-9]|FAILED" "$svc_log" 2>/dev/null; then
+                echo "success" > "${build_tmp}/${svc}.status"
+            else
+                echo "failed" > "${build_tmp}/${svc}.status"
+            fi
+        ) &
+        build_pids="$build_pids $!"
+    done
+
+    # Wait for all builds to complete
+    for pid in $build_pids; do
+        wait $pid 2>/dev/null || true
+    done
+
+    # Collect build results
+    local build_succeeded=""
+    local build_failed=""
+    : > "$build_log"  # Clear/create the main build log
+
+    for svc in $all_services; do
+        # Append individual log to main build log
+        if [ -f "${build_tmp}/${svc}.log" ]; then
+            echo "========== BUILD: $svc ==========" >> "$build_log"
+            cat "${build_tmp}/${svc}.log" >> "$build_log"
+            echo "" >> "$build_log"
+        fi
+
+        if [ -f "${build_tmp}/${svc}.status" ]; then
+            local status=$(cat "${build_tmp}/${svc}.status")
+            if [ "$status" = "success" ]; then
+                build_succeeded="$build_succeeded $svc"
+                echo -e "  ${GREEN}✓${NC} $svc built successfully"
+            else
+                build_failed="$build_failed $svc"
+                echo -e "  ${RED}✗${NC} $svc build failed"
+                # Show error snippet
+                if [ -f "${build_tmp}/${svc}.log" ]; then
+                    tail -10 "${build_tmp}/${svc}.log" 2>/dev/null | grep -iE "error|failed|fatal" | head -3 | while IFS= read -r line; do
+                        echo -e "    ${DIM}$line${NC}"
+                    done
+                fi
+            fi
+        fi
+    done
+
+    # Cleanup temp directory
+    rm -rf "$build_tmp"
 
     local build_end=$(now_ms)
     local build_duration=$((build_end - build_start))
 
-    if [ $build_status -eq 0 ]; then
+    # Trim whitespace
+    build_succeeded=$(echo $build_succeeded | xargs)
+    build_failed=$(echo $build_failed | xargs)
+
+    local succeeded_count=$(echo $build_succeeded | wc -w | xargs)
+    local failed_count=$(echo $build_failed | wc -w | xargs)
+
+    if [ -z "$build_failed" ]; then
         echo -e "  ${GREEN}✓${NC} All containers built ${DIM}($(format_duration $build_duration))${NC}"
     else
-        echo -e "\n  ${RED}✗ Build failed${NC}"
-        echo -e "  ${YELLOW}─────────────────────────────────────${NC}"
-        echo -e "  ${YELLOW}Build Error Summary:${NC}"
-        echo -e "  ${YELLOW}─────────────────────────────────────${NC}"
-        # Show last 40 lines which usually contain the actual error
-        echo ""
-        tail -40 "$build_log" | while IFS= read -r line; do
-            if echo "$line" | grep -qiE "error|failed|npm ERR|yarn"; then
-                echo -e "  ${RED}$line${NC}"
-            else
-                echo -e "  ${DIM}$line${NC}"
+        echo -e "\n  ${YELLOW}⚠${NC} Build completed with failures ${DIM}($(format_duration $build_duration))${NC}"
+        echo -e "  ${GREEN}Succeeded:${NC} $succeeded_count ${DIM}($build_succeeded)${NC}"
+        echo -e "  ${RED}Failed:${NC} $failed_count ${DIM}($build_failed)${NC}"
+        echo -e "  ${YELLOW}Full build log:${NC} $build_log"
+
+        if [ -z "$build_succeeded" ]; then
+            echo -e "\n${RED}Aborting: No containers built successfully${NC}"
+            end_phase "Phase 3: Building Containers"
+            return 1
+        fi
+
+        echo -e "\n  ${CYAN}Continuing with successfully built containers...${NC}"
+        # Update services_ready to only include successfully built services
+        local old_services_ready="$services_ready"
+        services_ready=""
+        for svc in $build_succeeded; do
+            # Check if it's a service (not a worker) by checking if it was in the original services_ready
+            if echo " $old_services_ready " | grep -q " $svc "; then
+                services_ready="$services_ready $svc"
             fi
         done
-        echo ""
-        echo -e "  ${YELLOW}Full build log:${NC} $build_log"
-        echo -e "  ${YELLOW}─────────────────────────────────────${NC}"
-        end_phase "Phase 3: Building Containers"
-        echo -e "\n${RED}Aborting: Cannot start containers without successful build${NC}"
-        return 1
+        services_ready=$(echo $services_ready | xargs)
+        # Update workers_ready to only include successfully built workers
+        local new_workers_ready=""
+        for worker_entry in $workers_ready; do
+            local worker_name="${worker_entry%%:*}"
+            if echo " $build_succeeded " | grep -q " $worker_name "; then
+                new_workers_ready="$new_workers_ready $worker_entry"
+            fi
+        done
+        workers_ready=$(echo $new_workers_ready | xargs)
     fi
 
     end_phase "Phase 3: Building Containers"
@@ -1332,10 +1404,20 @@ do_run() {
     start_redis_portforward &
     local redis_pid=$!
 
-    # Start all containers at once (faster than one-by-one)
-    echo -e "  ${DIM}Starting all containers in parallel...${NC}"
+    # Start containers that were successfully built
+    # Build the list of services to start (services + workers)
+    local services_to_start="$services_ready"
+    for worker_entry in $workers_ready; do
+        local worker_name="${worker_entry%%:*}"
+        services_to_start="$services_to_start $worker_name"
+    done
+    services_to_start=$(echo $services_to_start | xargs)
+
+    local start_count=$(echo $services_to_start | wc -w | xargs)
+    echo -e "  ${DIM}Starting $start_count container(s) in parallel...${NC}"
     local up_log="${LOG_DIR}/up_output.log"
-    docker_compose up -d 2>&1 | tee "$up_log"
+    # Only start the services that built successfully
+    docker_compose up -d $services_to_start 2>&1 | tee "$up_log"
     local up_status=${PIPESTATUS[0]}
 
     # Wait for Redis setup to complete
