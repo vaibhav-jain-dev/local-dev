@@ -1318,6 +1318,9 @@ do_run() {
         echo ""
         echo -e "  ${YELLOW}Full build log:${NC} $build_log"
         echo -e "  ${YELLOW}─────────────────────────────────────${NC}"
+        end_phase "Phase 3: Building Containers"
+        echo -e "\n${RED}Aborting: Cannot start containers without successful build${NC}"
+        return 1
     fi
 
     end_phase "Phase 3: Building Containers"
@@ -1331,17 +1334,32 @@ do_run() {
 
     # Start all containers at once (faster than one-by-one)
     echo -e "  ${DIM}Starting all containers in parallel...${NC}"
-    local up_output=$(docker_compose up -d 2>&1)
-    local up_status=$?
+    local up_log="${LOG_DIR}/up_output.log"
+    docker_compose up -d 2>&1 | tee "$up_log"
+    local up_status=${PIPESTATUS[0]}
 
     # Wait for Redis setup to complete
     wait $redis_pid 2>/dev/null || true
 
+    # Check for errors in output (be specific to avoid false positives)
+    if grep -qiE "ERROR:|FATAL|exited with code [1-9]|exit code: [1-9]|Cannot start|failed to start" "$up_log" 2>/dev/null; then
+        up_status=1
+    fi
+
     if [ $up_status -eq 0 ]; then
         echo -e "  ${GREEN}✓${NC} All containers started"
     else
-        echo -e "  ${YELLOW}⚠${NC} Some containers may have failed"
-        echo "$up_output" | grep -i error | head -3 | sed 's/^/    /'
+        echo -e "  ${YELLOW}⚠${NC} Some containers may have failed to start"
+        echo -e "  ${DIM}Check the output above for details${NC}"
+        echo -e "  ${DIM}Full log: $up_log${NC}"
+    fi
+
+    # Debug: show what containers were actually created
+    local created_containers=$(docker ps -a --format "{{.Names}}" 2>/dev/null | tr '\n' ' ')
+    if [ -n "$created_containers" ]; then
+        echo -e "  ${DIM}Containers created: $created_containers${NC}"
+    else
+        echo -e "  ${YELLOW}⚠${NC} No containers were created"
     fi
 
     sleep 2
@@ -1392,12 +1410,18 @@ do_run() {
             running_count=$((running_count + 1))
         else
             echo -e "${RED}✗${NC} ${BOLD}$service${NC} - failed"
-            docker logs --tail=3 $service 2>&1 | sed 's/^/    /'
+            # Check if container exists but is not running
+            if docker ps -a --format "{{.Names}}" 2>/dev/null | grep -q "^${service}$"; then
+                echo -e "    ${DIM}Container exists but not running. Last logs:${NC}"
+                docker logs --tail=5 $service 2>&1 | sed 's/^/    /'
+            else
+                echo -e "    ${DIM}Container was not created. Check build output above.${NC}"
+            fi
             failed_count=$((failed_count + 1))
         fi
     done
 
-    # Show workers status (format: "worker:parent")
+    # Show workers status (format: "worker:parent:dockerfile")
     for worker_entry in $workers_ready; do
         local worker=$(echo "$worker_entry" | cut -d: -f1)
 
@@ -1406,7 +1430,13 @@ do_run() {
             running_count=$((running_count + 1))
         else
             echo -e "${RED}✗${NC} ${BOLD}$worker${NC} ${BLUE}[worker]${NC} - failed"
-            docker logs --tail=3 $worker 2>&1 | sed 's/^/    /'
+            # Check if container exists but is not running
+            if docker ps -a --format "{{.Names}}" 2>/dev/null | grep -q "^${worker}$"; then
+                echo -e "    ${DIM}Container exists but not running. Last logs:${NC}"
+                docker logs --tail=5 $worker 2>&1 | sed 's/^/    /'
+            else
+                echo -e "    ${DIM}Container was not created. Check build output above.${NC}"
+            fi
             failed_count=$((failed_count + 1))
         fi
     done
