@@ -1682,7 +1682,12 @@ do_run() {
             local svc_log="${build_tmp}/${svc}.log"
             docker_compose --progress=plain build "$svc" > "$svc_log" 2>&1
             local exit_code=$?
-            if [ $exit_code -eq 0 ] && ! grep -qiE "ERROR:|failed to solve|exited with code [1-9]|exit code: [1-9]|FAILED" "$svc_log" 2>/dev/null; then
+            # Check for actual Docker build failures (not npm/webpack warnings that contain "error")
+            # - exit code non-zero = definite failure
+            # - "failed to solve" = Docker BuildKit failure
+            # - "executor failed" = Docker build step failure
+            # - "ERROR: " at line start = Docker error message
+            if [ $exit_code -eq 0 ] && ! grep -qE "failed to solve|executor failed running|^ERROR: " "$svc_log" 2>/dev/null; then
                 echo "success" > "${build_tmp}/${svc}.status"
             else
                 echo "failed" > "${build_tmp}/${svc}.status"
@@ -1822,8 +1827,8 @@ do_run() {
     # Wait for Redis setup to complete
     wait $redis_pid 2>/dev/null || true
 
-    # Check for errors in output (be specific to avoid false positives)
-    if grep -qiE "ERROR:|FATAL|exited with code [1-9]|exit code: [1-9]|Cannot start|failed to start" "$up_log" 2>/dev/null; then
+    # Check for errors in output (be specific to Docker errors, avoid false positives from app logs)
+    if grep -qE "^ERROR: |Cannot start container|failed to start|is not running" "$up_log" 2>/dev/null; then
         up_status=1
     fi
 
