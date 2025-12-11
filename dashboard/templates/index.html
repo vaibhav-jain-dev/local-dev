@@ -6,17 +6,19 @@
     <title>Local Dev Dashboard</title>
     <style>
         :root {
-            --bg-primary: #1a1a2e;
-            --bg-secondary: #16213e;
-            --bg-tertiary: #0f3460;
-            --text-primary: #eee;
-            --text-secondary: #aaa;
-            --accent-green: #00d26a;
-            --accent-red: #ff6b6b;
-            --accent-yellow: #ffd93d;
-            --accent-blue: #4ecdc4;
-            --accent-purple: #a855f7;
-            --border-color: #334;
+            --bg-primary: #0d1117;
+            --bg-secondary: #161b22;
+            --bg-tertiary: #21262d;
+            --bg-card: #1c2128;
+            --text-primary: #e6edf3;
+            --text-secondary: #8b949e;
+            --text-muted: #6e7681;
+            --accent-green: #3fb950;
+            --accent-red: #f85149;
+            --accent-yellow: #d29922;
+            --accent-blue: #58a6ff;
+            --accent-purple: #a371f7;
+            --border-color: #30363d;
         }
 
         * {
@@ -26,7 +28,7 @@
         }
 
         body {
-            font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif;
             background: var(--bg-primary);
             color: var(--text-primary);
             min-height: 100vh;
@@ -34,7 +36,7 @@
         }
 
         .dashboard {
-            max-width: 1400px;
+            max-width: 1200px;
             margin: 0 auto;
             padding: 20px;
         }
@@ -42,567 +44,446 @@
         /* Header */
         .header {
             background: var(--bg-secondary);
-            padding: 20px 25px;
-            border-radius: 12px;
-            margin-bottom: 20px;
+            padding: 16px 20px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            border: 1px solid var(--border-color);
             display: flex;
             align-items: center;
             justify-content: space-between;
-            border: 1px solid var(--border-color);
         }
 
         .header h1 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .header-info {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            font-size: 0.875rem;
+        }
+
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 12px;
+            border-radius: 20px;
+            background: var(--bg-tertiary);
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+
+        .status-badge.running {
+            background: rgba(63, 185, 80, 0.15);
+            color: var(--accent-green);
+        }
+
+        .status-badge.complete {
+            background: rgba(88, 166, 255, 0.15);
+            color: var(--accent-blue);
+        }
+
+        .status-badge.idle {
+            color: var(--text-secondary);
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: currentColor;
+        }
+
+        .status-badge.running .status-dot {
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        /* Summary Bar */
+        .summary-bar {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+        }
+
+        .summary-item {
+            background: var(--bg-secondary);
+            padding: 12px 20px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            flex: 1;
+            min-width: 150px;
+        }
+
+        .summary-label {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .summary-value {
             font-size: 1.5rem;
             font-weight: 600;
+            margin-top: 4px;
+        }
+
+        .summary-value.green { color: var(--accent-green); }
+        .summary-value.yellow { color: var(--accent-yellow); }
+        .summary-value.blue { color: var(--accent-blue); }
+
+        /* Phase Sections */
+        .phase-section {
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            margin-bottom: 12px;
+            border: 1px solid var(--border-color);
+            overflow: hidden;
+            transition: all 0.3s ease;
+        }
+
+        .phase-section.collapsed .phase-content {
+            display: none;
+        }
+
+        .phase-header {
+            padding: 14px 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            cursor: pointer;
+            user-select: none;
+            transition: background 0.2s ease;
+        }
+
+        .phase-header:hover {
+            background: var(--bg-tertiary);
+        }
+
+        .phase-header-left {
             display: flex;
             align-items: center;
             gap: 12px;
         }
 
-        .header h1::before {
-            content: '🍊';
-            font-size: 1.8rem;
-        }
-
-        .header-status {
-            display: flex;
-            align-items: center;
-            gap: 20px;
-        }
-
-        .status-indicator {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-size: 0.85rem;
-        }
-
-        .status-dot {
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            animation: pulse 2s infinite;
-        }
-
-        .status-dot.connected { background: var(--accent-green); }
-        .status-dot.disconnected { background: var(--accent-red); }
-
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-        }
-
-        .refresh-btn {
-            padding: 8px 16px;
-            background: var(--bg-tertiary);
-            border: 1px solid var(--border-color);
-            color: var(--text-primary);
-            font-family: inherit;
-            font-size: 0.8rem;
-            cursor: pointer;
-            border-radius: 6px;
-            transition: all 0.2s ease;
-        }
-
-        .refresh-btn:hover {
-            background: var(--accent-blue);
-            border-color: var(--accent-blue);
-        }
-
-        /* Quick Stats Row */
-        .stats-row {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-            gap: 15px;
-            margin-bottom: 20px;
-        }
-
-        .stat-card {
-            background: var(--bg-secondary);
-            border-radius: 10px;
-            padding: 20px;
-            text-align: center;
-            border: 1px solid var(--border-color);
-        }
-
-        .stat-value {
-            font-size: 2rem;
-            font-weight: 700;
-            color: var(--accent-blue);
-        }
-
-        .stat-value.running { color: var(--accent-green); }
-        .stat-value.stopped { color: var(--accent-red); }
-        .stat-value.building { color: var(--accent-yellow); }
-
-        .stat-label {
-            font-size: 0.75rem;
-            color: var(--text-secondary);
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            margin-top: 5px;
-        }
-
-        /* Build Progress Section */
-        .build-section {
-            background: var(--bg-secondary);
-            border-radius: 12px;
-            padding: 20px;
-            margin-bottom: 20px;
-            border: 1px solid var(--border-color);
-        }
-
-        .section-title {
-            font-size: 1rem;
-            font-weight: 600;
-            margin-bottom: 15px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .progress-container {
-            background: var(--bg-primary);
-            border-radius: 8px;
-            padding: 15px;
-        }
-
-        .phase-indicator {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 15px;
-        }
-
-        .phase {
-            flex: 1;
-            text-align: center;
-            padding: 10px 5px;
-            font-size: 0.7rem;
-            color: var(--text-secondary);
-            position: relative;
-        }
-
-        .phase.active {
-            color: var(--accent-blue);
-            font-weight: 600;
-        }
-
-        .phase.complete {
-            color: var(--accent-green);
-        }
-
         .phase-number {
-            display: block;
-            width: 24px;
-            height: 24px;
-            margin: 0 auto 5px;
+            width: 28px;
+            height: 28px;
             border-radius: 50%;
             background: var(--bg-tertiary);
-            line-height: 24px;
-            font-size: 0.75rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.875rem;
+            font-weight: 600;
         }
 
-        .phase.active .phase-number {
+        .phase-section.in_progress .phase-number {
             background: var(--accent-blue);
             color: white;
         }
 
-        .phase.complete .phase-number {
+        .phase-section.complete .phase-number {
             background: var(--accent-green);
             color: white;
         }
 
-        .progress-bar {
-            height: 8px;
-            background: var(--bg-tertiary);
-            border-radius: 4px;
-            overflow: hidden;
+        .phase-section.complete .phase-number::after {
+            content: '✓';
+            font-size: 0.75rem;
         }
 
-        .progress-bar-fill {
-            height: 100%;
-            background: linear-gradient(90deg, var(--accent-blue), var(--accent-purple));
-            transition: width 0.5s ease;
-            border-radius: 4px;
+        .phase-section.complete .phase-number span {
+            display: none;
         }
 
-        /* Services Grid */
-        .services-section {
-            background: var(--bg-secondary);
-            border-radius: 12px;
-            padding: 20px;
-            margin-bottom: 20px;
-            border: 1px solid var(--border-color);
+        .phase-title {
+            font-weight: 600;
+            font-size: 0.9375rem;
         }
 
-        .services-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-            gap: 15px;
-        }
-
-        .service-card {
-            background: var(--bg-primary);
-            border-radius: 10px;
-            padding: 15px;
-            border: 2px solid var(--border-color);
-            transition: all 0.2s ease;
-        }
-
-        .service-card:hover {
-            border-color: var(--accent-blue);
-            transform: translateY(-2px);
-        }
-
-        .service-card.running {
-            border-left: 4px solid var(--accent-green);
-        }
-
-        .service-card.stopped {
-            border-left: 4px solid var(--accent-red);
-        }
-
-        .service-card.building {
-            border-left: 4px solid var(--accent-yellow);
-        }
-
-        .service-header {
+        .phase-header-right {
             display: flex;
             align-items: center;
-            justify-content: space-between;
-            margin-bottom: 12px;
+            gap: 16px;
         }
 
-        .service-name {
-            font-weight: 700;
-            font-size: 1rem;
+        .phase-eta {
+            font-size: 0.8125rem;
+            color: var(--text-secondary);
         }
 
-        .service-status {
-            font-size: 0.7rem;
+        .phase-status {
+            font-size: 0.75rem;
             padding: 4px 10px;
             border-radius: 12px;
-            font-weight: 600;
-            text-transform: uppercase;
-        }
-
-        .service-status.running {
-            background: rgba(0, 210, 106, 0.2);
-            color: var(--accent-green);
-        }
-
-        .service-status.stopped {
-            background: rgba(255, 107, 107, 0.2);
-            color: var(--accent-red);
-        }
-
-        .service-status.building {
-            background: rgba(255, 217, 61, 0.2);
-            color: var(--accent-yellow);
-        }
-
-        .service-details {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 10px;
-            font-size: 0.8rem;
-            margin-bottom: 12px;
-        }
-
-        .service-detail {
-            display: flex;
-            flex-direction: column;
-        }
-
-        .detail-label {
-            color: var(--text-secondary);
-            font-size: 0.65rem;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        .detail-value {
-            color: var(--text-primary);
             font-weight: 500;
         }
 
-        .detail-value a {
-            color: var(--accent-blue);
-            text-decoration: none;
-        }
-
-        .detail-value a:hover {
-            text-decoration: underline;
-        }
-
-        .service-logs-preview {
+        .phase-status.pending {
             background: var(--bg-tertiary);
-            border-radius: 6px;
-            padding: 10px;
-            font-size: 0.7rem;
-            max-height: 100px;
-            overflow-y: auto;
             color: var(--text-secondary);
-            font-family: monospace;
         }
 
-        .service-logs-preview .log-line {
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            padding: 2px 0;
+        .phase-status.in_progress {
+            background: rgba(88, 166, 255, 0.15);
+            color: var(--accent-blue);
         }
 
-        .service-logs-preview .log-line.error {
-            color: var(--accent-red);
+        .phase-status.complete {
+            background: rgba(63, 185, 80, 0.15);
+            color: var(--accent-green);
         }
 
-        .service-actions {
-            display: flex;
-            gap: 8px;
-            margin-top: 12px;
-        }
-
-        .service-btn {
-            flex: 1;
-            padding: 8px 12px;
-            background: var(--bg-tertiary);
-            border: 1px solid var(--border-color);
-            color: var(--text-primary);
-            font-family: inherit;
+        .collapse-icon {
             font-size: 0.75rem;
-            cursor: pointer;
+            color: var(--text-muted);
+            transition: transform 0.2s ease;
+        }
+
+        .phase-section.collapsed .collapse-icon {
+            transform: rotate(-90deg);
+        }
+
+        /* Phase Content */
+        .phase-content {
+            padding: 0 20px 16px;
+            border-top: 1px solid var(--border-color);
+        }
+
+        /* Operations Matrix */
+        .operations-matrix {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 10px;
+            margin-top: 14px;
+        }
+
+        .operation-card {
+            background: var(--bg-card);
             border-radius: 6px;
+            padding: 12px;
+            border: 1px solid var(--border-color);
             transition: all 0.2s ease;
         }
 
-        .service-btn:hover {
-            background: var(--accent-blue);
+        .operation-card.in_progress {
             border-color: var(--accent-blue);
+            box-shadow: 0 0 0 1px var(--accent-blue);
         }
 
-        .service-btn.danger:hover {
-            background: var(--accent-red);
+        .operation-card.complete {
+            opacity: 0.7;
+        }
+
+        .operation-card.failed {
             border-color: var(--accent-red);
         }
 
-        /* Full Logs Section */
-        .logs-section {
-            background: var(--bg-secondary);
-            border-radius: 12px;
-            padding: 20px;
-            margin-bottom: 20px;
-            border: 1px solid var(--border-color);
-        }
-
-        .logs-header {
+        .operation-header {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            margin-bottom: 15px;
-            flex-wrap: wrap;
-            gap: 10px;
+            margin-bottom: 8px;
         }
 
-        .logs-tabs {
+        .operation-name {
+            font-weight: 600;
+            font-size: 0.875rem;
+        }
+
+        .operation-status-icon {
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
             display: flex;
-            gap: 5px;
-            flex-wrap: wrap;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.625rem;
         }
 
-        .logs-tab {
-            padding: 8px 16px;
+        .operation-status-icon.pending {
             background: var(--bg-tertiary);
-            border: none;
-            color: var(--text-secondary);
-            font-family: inherit;
-            font-size: 0.8rem;
-            cursor: pointer;
-            border-radius: 6px;
-            transition: all 0.2s ease;
+            color: var(--text-muted);
         }
 
-        .logs-tab:hover {
-            background: var(--bg-primary);
-            color: var(--text-primary);
-        }
-
-        .logs-tab.active {
+        .operation-status-icon.in_progress {
             background: var(--accent-blue);
+            color: white;
+            animation: spin 1s linear infinite;
+        }
+
+        .operation-status-icon.complete {
+            background: var(--accent-green);
             color: white;
         }
 
-        .logs-controls {
-            display: flex;
-            gap: 10px;
-            align-items: center;
-            flex-wrap: wrap;
+        .operation-status-icon.failed {
+            background: var(--accent-red);
+            color: white;
         }
 
-        .filter-input {
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        .operation-progress {
+            height: 4px;
             background: var(--bg-tertiary);
-            border: 1px solid var(--border-color);
-            color: var(--text-primary);
-            padding: 8px 12px;
-            border-radius: 6px;
-            font-family: inherit;
-            font-size: 0.8rem;
-            width: 200px;
+            border-radius: 2px;
+            overflow: hidden;
         }
 
-        .filter-input:focus {
-            outline: none;
-            border-color: var(--accent-blue);
+        .operation-progress-fill {
+            height: 100%;
+            background: var(--accent-blue);
+            transition: width 0.3s ease;
+        }
+
+        .operation-card.complete .operation-progress-fill {
+            background: var(--accent-green);
+        }
+
+        .operation-card.failed .operation-progress-fill {
+            background: var(--accent-red);
+        }
+
+        .operation-eta {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 6px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        /* Parallelism Indicator */
+        .parallelism-info {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.8125rem;
+            color: var(--text-secondary);
+            margin-top: 14px;
+            padding-top: 12px;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .parallelism-count {
+            background: var(--bg-tertiary);
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-weight: 600;
+            color: var(--accent-blue);
+        }
+
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text-secondary);
+        }
+
+        .empty-state-icon {
+            font-size: 3rem;
+            margin-bottom: 16px;
+        }
+
+        .empty-state h2 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 8px;
+        }
+
+        .empty-state p {
+            font-size: 0.9375rem;
+        }
+
+        .empty-state code {
+            background: var(--bg-tertiary);
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-family: 'SF Mono', Consolas, monospace;
+        }
+
+        /* Logs Section (collapsed by default) */
+        .logs-section {
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            margin-top: 16px;
+        }
+
+        .logs-header {
+            padding: 14px 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            cursor: pointer;
+        }
+
+        .logs-header:hover {
+            background: var(--bg-tertiary);
+        }
+
+        .logs-content {
+            display: none;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .logs-section.expanded .logs-content {
+            display: block;
         }
 
         .logs-container {
-            background: #0d1117;
-            border-radius: 8px;
-            padding: 15px;
-            max-height: 500px;
+            background: var(--bg-primary);
+            padding: 12px;
+            max-height: 300px;
             overflow-y: auto;
-            font-size: 0.8rem;
+            font-family: 'SF Mono', Consolas, monospace;
+            font-size: 0.75rem;
             line-height: 1.6;
         }
 
         .log-line {
+            padding: 2px 0;
             white-space: pre-wrap;
             word-break: break-all;
-            padding: 3px 0;
-            border-bottom: 1px solid rgba(255,255,255,0.05);
-        }
-
-        .log-line:hover {
-            background: rgba(255, 255, 255, 0.05);
-        }
-
-        .log-line .timestamp {
-            color: var(--text-secondary);
-            margin-right: 10px;
-        }
-
-        .log-line .service-tag {
-            font-weight: 600;
-            margin-right: 10px;
-            padding: 2px 8px;
-            border-radius: 4px;
-            font-size: 0.7rem;
         }
 
         .log-line.error { color: var(--accent-red); }
-        .log-line.warning { color: var(--accent-yellow); }
         .log-line.success { color: var(--accent-green); }
-        .log-line.info { color: var(--accent-blue); }
-
-        /* Service tag colors */
-        .service-tag.health-api { background: #3b82f6; }
-        .service-tag.scheduler-api { background: #8b5cf6; }
-        .service-tag.oms-api { background: #10b981; }
-        .service-tag.bifrost { background: #f59e0b; }
-        .service-tag.oms-web { background: #ef4444; }
-        .service-tag.oms-worker { background: #06b6d4; }
-        .service-tag.oms-worker-scheduler { background: #14b8a6; }
-        .service-tag.oms-consumer-worker { background: #0891b2; }
-        .service-tag.redis { background: #dc2626; }
-        .service-tag.build { background: #6366f1; }
-
-        .empty-state {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            padding: 40px;
-            color: var(--text-secondary);
-            font-size: 0.9rem;
-        }
-
-        .empty-state::before {
-            content: '📋';
-            font-size: 3rem;
-            margin-bottom: 15px;
-        }
-
-        /* Commands Section */
-        .commands-section {
-            background: var(--bg-secondary);
-            border-radius: 12px;
-            padding: 20px;
-            margin-bottom: 20px;
-            border: 1px solid var(--border-color);
-        }
-
-        .commands-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-            gap: 10px;
-        }
-
-        .command-item {
-            background: var(--bg-primary);
-            padding: 12px 15px;
-            border-radius: 8px;
-            font-family: monospace;
-            font-size: 0.85rem;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-
-        .command-item code {
-            color: var(--accent-blue);
-        }
-
-        .command-item .desc {
-            color: var(--text-secondary);
-            font-size: 0.75rem;
-        }
-
-        /* Scrollbar styling */
-        ::-webkit-scrollbar {
-            width: 8px;
-            height: 8px;
-        }
-
-        ::-webkit-scrollbar-track {
-            background: var(--bg-primary);
-        }
-
-        ::-webkit-scrollbar-thumb {
-            background: var(--bg-tertiary);
-            border-radius: 4px;
-        }
-
-        ::-webkit-scrollbar-thumb:hover {
-            background: var(--border-color);
-        }
 
         /* Responsive */
         @media (max-width: 768px) {
             .dashboard {
-                padding: 10px;
+                padding: 12px;
             }
 
             .header {
                 flex-direction: column;
-                gap: 15px;
+                gap: 12px;
                 text-align: center;
             }
 
-            .services-grid {
-                grid-template-columns: 1fr;
-            }
-
-            .stats-row {
-                grid-template-columns: repeat(2, 1fr);
-            }
-
-            .logs-header {
+            .summary-bar {
                 flex-direction: column;
-                align-items: stretch;
             }
 
-            .logs-controls {
-                justify-content: center;
+            .operations-matrix {
+                grid-template-columns: 1fr;
             }
         }
     </style>
@@ -611,133 +492,54 @@
     <div class="dashboard">
         <!-- Header -->
         <header class="header">
-            <h1>Orange Health Local Dev</h1>
-            <div class="header-status">
-                <div class="status-indicator">
-                    <div class="status-dot connected" id="connection-status"></div>
-                    <span id="status-text">Connected</span>
+            <h1>🍊 Orange Health Local Dev</h1>
+            <div class="header-info">
+                <span id="namespace-display" style="color: var(--text-secondary);">-</span>
+                <div class="status-badge idle" id="status-badge">
+                    <span class="status-dot"></span>
+                    <span id="status-text">Idle</span>
                 </div>
-                <span style="color: var(--text-secondary); font-size: 0.8rem;" id="last-update">-</span>
-                <button class="refresh-btn" onclick="fetchStatus()">Refresh</button>
             </div>
         </header>
 
-        <!-- Quick Stats -->
-        <div class="stats-row">
-            <div class="stat-card">
-                <div class="stat-value running" id="stat-running">0</div>
-                <div class="stat-label">Running</div>
+        <!-- Summary Bar -->
+        <div class="summary-bar">
+            <div class="summary-item">
+                <div class="summary-label">Current Phase</div>
+                <div class="summary-value blue" id="current-phase">-</div>
             </div>
-            <div class="stat-card">
-                <div class="stat-value stopped" id="stat-stopped">0</div>
-                <div class="stat-label">Stopped</div>
+            <div class="summary-item">
+                <div class="summary-label">Services</div>
+                <div class="summary-value" id="services-count">0</div>
             </div>
-            <div class="stat-card">
-                <div class="stat-value" id="stat-total">0</div>
-                <div class="stat-label">Total Services</div>
+            <div class="summary-item">
+                <div class="summary-label">In Progress</div>
+                <div class="summary-value yellow" id="in-progress-count">0</div>
             </div>
-            <div class="stat-card">
-                <div class="stat-value" id="stat-logs">0</div>
-                <div class="stat-label">Log Lines</div>
-            </div>
-        </div>
-
-        <!-- Build Progress -->
-        <div class="build-section">
-            <div class="section-title">📊 Build Progress</div>
-            <div class="progress-container">
-                <div class="phase-indicator">
-                    <div class="phase" id="phase-1">
-                        <span class="phase-number">1</span>
-                        Repository Setup
-                    </div>
-                    <div class="phase" id="phase-2">
-                        <span class="phase-number">2</span>
-                        Docker Config
-                    </div>
-                    <div class="phase" id="phase-3">
-                        <span class="phase-number">3</span>
-                        Building
-                    </div>
-                    <div class="phase" id="phase-4">
-                        <span class="phase-number">4</span>
-                        Starting
-                    </div>
-                    <div class="phase" id="phase-5">
-                        <span class="phase-number">5</span>
-                        Complete
-                    </div>
-                </div>
-                <div class="progress-bar">
-                    <div class="progress-bar-fill" id="progress-fill" style="width: 0%"></div>
-                </div>
-                <div style="margin-top: 10px; font-size: 0.85rem; color: var(--text-secondary);" id="phase-text">Idle - Waiting for services...</div>
+            <div class="summary-item">
+                <div class="summary-label">Elapsed Time</div>
+                <div class="summary-value green" id="elapsed-time">0s</div>
             </div>
         </div>
 
-        <!-- Services -->
-        <div class="services-section">
-            <div class="section-title">🐳 Services</div>
-            <div class="services-grid" id="services-grid">
-                <div class="empty-state">
-                    <span>No services running</span>
-                    <span style="font-size: 0.8rem; margin-top: 5px;">Start services with <code>make run</code></span>
-                </div>
+        <!-- Phases Container -->
+        <div id="phases-container">
+            <div class="empty-state">
+                <div class="empty-state-icon">📦</div>
+                <h2>Waiting for build...</h2>
+                <p>Start a build with <code>make run -d</code> or <code>make run --dashboard</code></p>
             </div>
         </div>
 
-        <!-- Logs -->
-        <div class="logs-section">
-            <div class="logs-header">
-                <div class="section-title" style="margin-bottom: 0;">📝 Live Logs</div>
-                <div class="logs-tabs">
-                    <button class="logs-tab active" data-tab="all">All</button>
-                    <button class="logs-tab" data-tab="build">Build</button>
-                    <button class="logs-tab" data-tab="errors">Errors</button>
-                </div>
-                <div class="logs-controls">
-                    <input type="text" class="filter-input" id="log-filter" placeholder="Filter logs...">
-                    <label style="font-size: 0.8rem; cursor: pointer;">
-                        <input type="checkbox" id="auto-scroll" checked> Auto-scroll
-                    </label>
-                    <button class="service-btn" onclick="clearLogs()">Clear</button>
-                    <button class="service-btn" onclick="exportLogs()">Export</button>
-                </div>
+        <!-- Logs Section (collapsible) -->
+        <div class="logs-section" id="logs-section">
+            <div class="logs-header" onclick="toggleLogs()">
+                <span style="font-weight: 600;">📝 Build Logs</span>
+                <span class="collapse-icon">▼</span>
             </div>
-            <div class="logs-container" id="logs-container">
-                <div class="empty-state">
-                    <span>Waiting for logs...</span>
-                </div>
-            </div>
-        </div>
-
-        <!-- Quick Commands -->
-        <div class="commands-section">
-            <div class="section-title">⚡ Quick Commands</div>
-            <div class="commands-grid">
-                <div class="command-item">
-                    <code>make run</code>
-                    <span class="desc">Start all services</span>
-                </div>
-                <div class="command-item">
-                    <code>make run d</code>
-                    <span class="desc">Start with dashboard</span>
-                </div>
-                <div class="command-item">
-                    <code>make stop</code>
-                    <span class="desc">Stop all services</span>
-                </div>
-                <div class="command-item">
-                    <code>make restart</code>
-                    <span class="desc">Restart all services</span>
-                </div>
-                <div class="command-item">
-                    <code>make logs &lt;svc&gt;</code>
-                    <span class="desc">View service logs</span>
-                </div>
-                <div class="command-item">
-                    <code>make dashboard</code>
-                    <span class="desc">Open this dashboard</span>
+            <div class="logs-content">
+                <div class="logs-container" id="logs-container">
+                    <div class="log-line" style="color: var(--text-muted);">Waiting for logs...</div>
                 </div>
             </div>
         </div>
@@ -745,374 +547,270 @@
 
     <script>
         // State
+        let currentRunId = null;
+        let startTime = null;
+        let progressSource = null;
+        let buildLogSource = null;
         let logs = [];
-        let currentTab = 'all';
-        let autoScroll = true;
-        let filterText = '';
-        let logCount = 0;
-        let eventSource = null;
-        let buildEventSource = null;
-        let servicesData = {};
+        let elapsedInterval = null;
 
-        // DOM Elements
-        const logsContainer = document.getElementById('logs-container');
-        const servicesGrid = document.getElementById('services-grid');
-        const connectionStatus = document.getElementById('connection-status');
-        const statusText = document.getElementById('status-text');
-        const lastUpdate = document.getElementById('last-update');
-
-        // Service colors
-        const serviceColors = {
-            'health-api': '#3b82f6',
-            'scheduler-api': '#8b5cf6',
-            'oms-api': '#10b981',
-            'oms': '#10b981',
-            'bifrost': '#f59e0b',
-            'oms-web': '#ef4444',
-            'oms-worker': '#06b6d4',
-            'oms-worker-scheduler': '#14b8a6',
-            'oms-consumer-worker': '#0891b2',
-            'redis': '#dc2626',
-            'oh-local-redis': '#dc2626',
-            'build': '#6366f1'
+        // Phase names
+        const PHASE_NAMES = {
+            '1': 'Repository Setup',
+            '2': 'Docker Configuration',
+            '3': 'Building Containers',
+            '4': 'Starting Services',
+            '5': 'Complete'
         };
 
         // Initialize
         function init() {
-            setupEventListeners();
-            fetchStatus();
-            connectToLogStream();
-            connectToBuildStream();
-            setInterval(fetchStatus, 3000);
+            connectToProgressStream();
+            connectToBuildLogStream();
+            startElapsedTimer();
         }
 
-        function setupEventListeners() {
-            // Tab switching
-            document.querySelectorAll('.logs-tab').forEach(tab => {
-                tab.addEventListener('click', () => {
-                    document.querySelectorAll('.logs-tab').forEach(t => t.classList.remove('active'));
-                    tab.classList.add('active');
-                    currentTab = tab.dataset.tab;
-                    renderLogs();
-                });
-            });
+        function connectToProgressStream() {
+            if (progressSource) progressSource.close();
 
-            // Auto-scroll toggle
-            document.getElementById('auto-scroll').addEventListener('change', (e) => {
-                autoScroll = e.target.checked;
-            });
+            progressSource = new EventSource('/api/progress/stream');
 
-            // Filter input
-            document.getElementById('log-filter').addEventListener('input', (e) => {
-                filterText = e.target.value.toLowerCase();
-                renderLogs();
-            });
-        }
-
-        async function fetchStatus() {
-            try {
-                const response = await fetch('/api/status');
-                const data = await response.json();
-                servicesData = data.services;
-                updateServices(data.services);
-                updateBuildProgress(data.build_progress);
-                updateConnectionStatus(true);
-                lastUpdate.textContent = 'Updated: ' + new Date().toLocaleTimeString();
-            } catch (error) {
-                updateConnectionStatus(false);
-                console.error('Failed to fetch status:', error);
-            }
-        }
-
-        function updateServices(services) {
-            let runningCount = 0;
-            let stoppedCount = 0;
-
-            const sortedServices = Object.values(services).sort((a, b) => {
-                // Put running services first
-                if (a.running && !b.running) return -1;
-                if (!a.running && b.running) return 1;
-                return a.name.localeCompare(b.name);
-            });
-
-            if (sortedServices.length === 0) {
-                servicesGrid.innerHTML = `
-                    <div class="empty-state">
-                        <span>No services detected</span>
-                        <span style="font-size: 0.8rem; margin-top: 5px;">Start services with <code>make run</code></span>
-                    </div>
-                `;
-                document.getElementById('stat-running').textContent = '0';
-                document.getElementById('stat-stopped').textContent = '0';
-                document.getElementById('stat-total').textContent = '0';
-                return;
-            }
-
-            servicesGrid.innerHTML = sortedServices.map(service => {
-                if (service.running) runningCount++;
-                else stoppedCount++;
-
-                const statusClass = service.running ? 'running' : 'stopped';
-                const statusText = service.running ? 'Running' : 'Stopped';
-                const color = serviceColors[service.name] || '#888';
-                const port = service.port || extractPort(service.ports);
-                const portUrl = port ? `http://localhost:${port}` : null;
-
-                return `
-                    <div class="service-card ${statusClass}">
-                        <div class="service-header">
-                            <span class="service-name" style="color: ${color}">${service.name}</span>
-                            <span class="service-status ${statusClass}">${statusText}</span>
-                        </div>
-                        <div class="service-details">
-                            <div class="service-detail">
-                                <span class="detail-label">Type</span>
-                                <span class="detail-value">${service.type || 'container'}</span>
-                            </div>
-                            <div class="service-detail">
-                                <span class="detail-label">Port</span>
-                                <span class="detail-value">
-                                    ${portUrl ? `<a href="${portUrl}" target="_blank">${port}</a>` : (port || '-')}
-                                </span>
-                            </div>
-                            <div class="service-detail">
-                                <span class="detail-label">Status</span>
-                                <span class="detail-value">${service.status || '-'}</span>
-                            </div>
-                            <div class="service-detail">
-                                <span class="detail-label">Ports Mapped</span>
-                                <span class="detail-value">${service.ports || '-'}</span>
-                            </div>
-                        </div>
-                        <div class="service-logs-preview" id="logs-preview-${service.name}">
-                            <div class="log-line">Loading logs...</div>
-                        </div>
-                        <div class="service-actions">
-                            <button class="service-btn" onclick="viewLogs('${service.name}')">View Logs</button>
-                            <button class="service-btn" onclick="restartService('${service.name}')">Restart</button>
-                        </div>
-                    </div>
-                `;
-            }).join('');
-
-            document.getElementById('stat-running').textContent = runningCount;
-            document.getElementById('stat-stopped').textContent = stoppedCount;
-            document.getElementById('stat-total').textContent = sortedServices.length;
-
-            // Fetch recent logs for each running service
-            sortedServices.forEach(service => {
-                if (service.running) {
-                    fetchServiceLogs(service.name);
+            progressSource.onmessage = (event) => {
+                try {
+                    const msg = JSON.parse(event.data);
+                    if (msg.type === 'new_run') {
+                        // New run started - clear everything
+                        currentRunId = msg.data.run_id;
+                        startTime = new Date(msg.data.start_time);
+                        logs = [];
+                        renderProgress(msg.data);
+                    } else if (msg.type === 'update') {
+                        renderProgress(msg.data);
+                    }
+                } catch (e) {
+                    console.error('Failed to parse progress:', e);
                 }
-            });
+            };
+
+            progressSource.onerror = () => {
+                setTimeout(connectToProgressStream, 3000);
+            };
         }
 
-        function extractPort(portsStr) {
-            if (!portsStr) return null;
-            const match = portsStr.match(/:(\d+)->/);
-            return match ? match[1] : null;
-        }
+        function connectToBuildLogStream() {
+            if (buildLogSource) buildLogSource.close();
 
-        async function fetchServiceLogs(serviceName) {
-            try {
-                const response = await fetch(`/api/logs/${serviceName}`);
-                const data = await response.json();
-                const preview = document.getElementById(`logs-preview-${serviceName}`);
-                if (preview && data.logs) {
-                    const recentLogs = data.logs.slice(-5);
-                    preview.innerHTML = recentLogs.map(line => {
-                        const isError = line.toLowerCase().includes('error') || line.toLowerCase().includes('exception');
-                        return `<div class="log-line ${isError ? 'error' : ''}">${escapeHtml(line)}</div>`;
-                    }).join('') || '<div class="log-line">No logs available</div>';
-                }
-            } catch (e) {
-                console.error('Failed to fetch logs for', serviceName, e);
-            }
-        }
+            buildLogSource = new EventSource('/api/build-logs/stream');
 
-        function updateBuildProgress(progress) {
-            const phaseNum = progress.phase_number || 0;
-            const percentage = phaseNum > 0 ? (phaseNum / 5) * 100 : 0;
-
-            // Update phases
-            for (let i = 1; i <= 5; i++) {
-                const phaseEl = document.getElementById(`phase-${i}`);
-                phaseEl.classList.remove('active', 'complete');
-                if (i < phaseNum) {
-                    phaseEl.classList.add('complete');
-                } else if (i === phaseNum) {
-                    phaseEl.classList.add('active');
-                }
-            }
-
-            document.getElementById('progress-fill').style.width = `${percentage}%`;
-            document.getElementById('phase-text').textContent = progress.phase || 'Idle - Waiting for services...';
-        }
-
-        function updateConnectionStatus(connected) {
-            connectionStatus.className = `status-dot ${connected ? 'connected' : 'disconnected'}`;
-            statusText.textContent = connected ? 'Connected' : 'Disconnected';
-        }
-
-        function viewLogs(serviceName) {
-            // Filter logs to show only this service
-            document.getElementById('log-filter').value = serviceName;
-            filterText = serviceName.toLowerCase();
-            renderLogs();
-            // Scroll to logs section
-            document.querySelector('.logs-section').scrollIntoView({ behavior: 'smooth' });
-        }
-
-        function restartService(serviceName) {
-            if (confirm(`Restart ${serviceName}?`)) {
-                // Just inform user - actual restart needs to be done via terminal
-                alert(`To restart ${serviceName}, run:\ndocker restart ${serviceName}`);
-            }
-        }
-
-        function connectToLogStream() {
-            if (eventSource) eventSource.close();
-
-            eventSource = new EventSource('/api/all-logs/stream');
-
-            eventSource.onmessage = (event) => {
+            buildLogSource.onmessage = (event) => {
                 try {
                     const data = JSON.parse(event.data);
                     if (data.log) {
-                        addLog(data.service || 'unknown', data.log);
+                        addLog(data.log);
                     }
                 } catch (e) {
                     console.error('Failed to parse log:', e);
                 }
             };
 
-            eventSource.onerror = () => {
-                updateConnectionStatus(false);
-                setTimeout(connectToLogStream, 5000);
+            buildLogSource.onerror = () => {
+                setTimeout(connectToBuildLogStream, 5000);
             };
         }
 
-        function connectToBuildStream() {
-            if (buildEventSource) buildEventSource.close();
-
-            buildEventSource = new EventSource('/api/build-logs/stream');
-
-            buildEventSource.onmessage = (event) => {
-                try {
-                    const data = JSON.parse(event.data);
-                    if (data.log) {
-                        addLog('build', data.log);
-                    }
-                } catch (e) {
-                    console.error('Failed to parse build log:', e);
+        function startElapsedTimer() {
+            elapsedInterval = setInterval(() => {
+                if (startTime) {
+                    const elapsed = Math.floor((Date.now() - startTime.getTime()) / 1000);
+                    document.getElementById('elapsed-time').textContent = formatTime(elapsed);
                 }
-            };
-
-            buildEventSource.onerror = () => {
-                setTimeout(connectToBuildStream, 5000);
-            };
+            }, 1000);
         }
 
-        function addLog(service, message) {
-            const timestamp = new Date().toLocaleTimeString();
-            const logEntry = {
-                timestamp,
-                service,
-                message: message.trim(),
-                type: getLogType(message)
-            };
-
-            logs.push(logEntry);
-            logCount++;
-
-            // Keep only last 5000 logs
-            if (logs.length > 5000) {
-                logs = logs.slice(-5000);
-            }
-
-            document.getElementById('stat-logs').textContent = logCount;
-            renderLogs();
+        function formatTime(seconds) {
+            if (seconds < 60) return `${seconds}s`;
+            const mins = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            return `${mins}m ${secs}s`;
         }
 
-        function getLogType(message) {
-            const lower = message.toLowerCase();
-            if (lower.includes('error') || lower.includes('exception') || lower.includes('failed') || lower.includes('fatal')) return 'error';
-            if (lower.includes('warning') || lower.includes('warn')) return 'warning';
-            if (lower.includes('success') || lower.includes('completed') || lower.includes('✓') || lower.includes('started')) return 'success';
-            if (lower.includes('info') || lower.includes('starting') || lower.includes('loading')) return 'info';
-            return '';
+        function formatEta(ms) {
+            if (!ms || ms <= 0) return '';
+            const seconds = Math.round(ms / 1000);
+            if (seconds < 60) return `~${seconds}s`;
+            const mins = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            return `~${mins}m ${secs}s`;
         }
 
-        function renderLogs() {
-            let filteredLogs = logs;
+        function renderProgress(progress) {
+            // Update header
+            document.getElementById('namespace-display').textContent = progress.namespace ? `Namespace: ${progress.namespace}` : '-';
 
-            // Filter by tab
-            if (currentTab === 'build') {
-                filteredLogs = logs.filter(l => l.service === 'build');
-            } else if (currentTab === 'errors') {
-                filteredLogs = logs.filter(l => l.type === 'error');
+            const statusBadge = document.getElementById('status-badge');
+            const statusText = document.getElementById('status-text');
+
+            if (progress.completed) {
+                statusBadge.className = 'status-badge complete';
+                statusText.textContent = 'Complete';
+            } else if (progress.current_phase > 0) {
+                statusBadge.className = 'status-badge running';
+                statusText.textContent = 'Running';
+            } else {
+                statusBadge.className = 'status-badge idle';
+                statusText.textContent = 'Idle';
             }
 
-            // Filter by text
-            if (filterText) {
-                filteredLogs = filteredLogs.filter(l =>
-                    l.message.toLowerCase().includes(filterText) ||
-                    l.service.toLowerCase().includes(filterText)
-                );
-            }
+            // Update summary
+            document.getElementById('current-phase').textContent = progress.current_phase > 0 ? `Phase ${progress.current_phase}` : '-';
+            document.getElementById('services-count').textContent = progress.services ? progress.services.length : 0;
 
-            if (filteredLogs.length === 0) {
-                logsContainer.innerHTML = `
+            // Count in-progress operations
+            let inProgressCount = 0;
+            for (const [phaseNum, phase] of Object.entries(progress.phases || {})) {
+                for (const [opName, op] of Object.entries(phase.operations || {})) {
+                    if (op.status === 'in_progress') inProgressCount++;
+                }
+            }
+            document.getElementById('in-progress-count').textContent = inProgressCount;
+
+            // Render phases
+            const container = document.getElementById('phases-container');
+
+            if (!progress.phases || Object.keys(progress.phases).length === 0) {
+                container.innerHTML = `
                     <div class="empty-state">
-                        <span>No logs to display</span>
-                        <span style="font-size: 0.8rem; margin-top: 5px;">
-                            ${logs.length > 0 ? 'Try adjusting your filters' : 'Waiting for log output...'}
-                        </span>
+                        <div class="empty-state-icon">📦</div>
+                        <h2>Waiting for build...</h2>
+                        <p>Start a build with <code>make run -d</code> or <code>make run --dashboard</code></p>
                     </div>
                 `;
                 return;
             }
 
-            const html = filteredLogs.slice(-500).map(log => {
-                const color = serviceColors[log.service] || '#888';
-                return `
-                    <div class="log-line ${log.type}">
-                        <span class="timestamp">${log.timestamp}</span>
-                        <span class="service-tag" style="background: ${color}">${log.service}</span>
-                        ${escapeHtml(log.message)}
+            let html = '';
+            for (let i = 1; i <= 5; i++) {
+                const phase = progress.phases[String(i)] || { status: 'pending', operations: {} };
+                const isCollapsed = phase.status === 'complete' && progress.current_phase > i;
+                const phaseClass = `phase-section ${phase.status} ${isCollapsed ? 'collapsed' : ''}`;
+
+                const operations = phase.operations || {};
+                const opCount = Object.keys(operations).length;
+                const completedOps = Object.values(operations).filter(o => o.status === 'complete').length;
+                const inProgressOps = Object.values(operations).filter(o => o.status === 'in_progress').length;
+
+                html += `
+                    <div class="${phaseClass}" id="phase-${i}">
+                        <div class="phase-header" onclick="togglePhase(${i})">
+                            <div class="phase-header-left">
+                                <div class="phase-number"><span>${i}</span></div>
+                                <span class="phase-title">${PHASE_NAMES[String(i)]}</span>
+                            </div>
+                            <div class="phase-header-right">
+                                ${phase.eta_ms > 0 ? `<span class="phase-eta">ETA: ${formatEta(phase.eta_ms)}</span>` : ''}
+                                <span class="phase-status ${phase.status}">${formatStatus(phase.status)}</span>
+                                <span class="collapse-icon">▼</span>
+                            </div>
+                        </div>
+                        <div class="phase-content">
+                            ${opCount > 0 ? `
+                                <div class="operations-matrix">
+                                    ${Object.entries(operations).map(([name, op]) => renderOperation(name, op)).join('')}
+                                </div>
+                                ${inProgressOps > 0 ? `
+                                    <div class="parallelism-info">
+                                        <span>Parallel operations:</span>
+                                        <span class="parallelism-count">${inProgressOps}</span>
+                                        <span style="color: var(--text-muted)">of ${opCount} total</span>
+                                    </div>
+                                ` : ''}
+                            ` : `
+                                <div style="padding: 20px 0; color: var(--text-muted); text-align: center;">
+                                    ${phase.status === 'pending' ? 'Waiting...' : phase.status === 'in_progress' ? 'Processing...' : 'Done'}
+                                </div>
+                            `}
+                        </div>
                     </div>
                 `;
+            }
+
+            container.innerHTML = html;
+        }
+
+        function renderOperation(name, op) {
+            const progress = op.status === 'complete' ? 100 : op.status === 'in_progress' ? 50 : 0;
+            const statusIcon = {
+                'pending': '○',
+                'in_progress': '◐',
+                'complete': '✓',
+                'failed': '✗'
+            }[op.status] || '○';
+
+            return `
+                <div class="operation-card ${op.status}">
+                    <div class="operation-header">
+                        <span class="operation-name">${name}</span>
+                        <div class="operation-status-icon ${op.status}">${statusIcon}</div>
+                    </div>
+                    <div class="operation-progress">
+                        <div class="operation-progress-fill" style="width: ${progress}%"></div>
+                    </div>
+                    <div class="operation-eta">
+                        <span>${op.status === 'in_progress' ? 'In progress...' : op.status === 'complete' ? 'Done' : op.status === 'failed' ? 'Failed' : 'Pending'}</span>
+                        ${op.eta_ms > 0 ? `<span>${formatEta(op.eta_ms)}</span>` : ''}
+                    </div>
+                </div>
+            `;
+        }
+
+        function formatStatus(status) {
+            return {
+                'pending': 'Pending',
+                'in_progress': 'Running',
+                'complete': 'Complete'
+            }[status] || status;
+        }
+
+        function togglePhase(num) {
+            const section = document.getElementById(`phase-${num}`);
+            if (section) {
+                section.classList.toggle('collapsed');
+            }
+        }
+
+        function toggleLogs() {
+            const section = document.getElementById('logs-section');
+            section.classList.toggle('expanded');
+        }
+
+        function addLog(message) {
+            const trimmed = message.trim();
+            if (!trimmed) return;
+
+            logs.push(trimmed);
+            if (logs.length > 500) {
+                logs = logs.slice(-500);
+            }
+
+            const container = document.getElementById('logs-container');
+            const isError = trimmed.toLowerCase().includes('error') || trimmed.toLowerCase().includes('failed');
+            const isSuccess = trimmed.includes('✓') || trimmed.toLowerCase().includes('success');
+
+            const className = isError ? 'error' : isSuccess ? 'success' : '';
+
+            container.innerHTML = logs.slice(-100).map(line => {
+                const cls = line.toLowerCase().includes('error') || line.toLowerCase().includes('failed') ? 'error' :
+                           line.includes('✓') || line.toLowerCase().includes('success') ? 'success' : '';
+                return `<div class="log-line ${cls}">${escapeHtml(line)}</div>`;
             }).join('');
 
-            logsContainer.innerHTML = html;
-
-            if (autoScroll) {
-                logsContainer.scrollTop = logsContainer.scrollHeight;
-            }
+            container.scrollTop = container.scrollHeight;
         }
 
         function escapeHtml(text) {
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
-        }
-
-        function clearLogs() {
-            logs = [];
-            logCount = 0;
-            document.getElementById('stat-logs').textContent = '0';
-            renderLogs();
-        }
-
-        function exportLogs() {
-            const content = logs.map(l => `[${l.timestamp}] [${l.service}] ${l.message}`).join('\n');
-            const blob = new Blob([content], { type: 'text/plain' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `logs-${new Date().toISOString().slice(0, 10)}.txt`;
-            a.click();
-            URL.revokeObjectURL(url);
         }
 
         // Start

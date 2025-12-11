@@ -27,6 +27,7 @@ LOG_DIR="logs"
 CACHE_FILE="logs/cache.txt"
 BRANCH_CACHE_FILE="logs/branch_cache.txt"
 METRICS_FILE="logs/run_metrics.json"
+PROGRESS_FILE="logs/progress.json"
 MAX_METRICS_HISTORY=30
 
 # Valid namespaces
@@ -324,6 +325,103 @@ show_run_summary() {
             echo -e "  vs average: ${GREEN}$(format_duration ${diff#-}) faster${NC}"
         fi
     fi
+}
+
+# ============================================
+# Progress File Functions (for Dashboard)
+# ============================================
+
+# Initialize/clear progress file for fresh run
+init_progress_file() {
+    mkdir -p "$LOG_DIR"
+    cat > "$PROGRESS_FILE" << 'EOF'
+{
+    "run_id": "",
+    "start_time": "",
+    "current_phase": 0,
+    "phases": {
+        "1": {"name": "Repository Setup", "status": "pending", "start_time": null, "end_time": null, "eta_ms": 0, "operations": {}},
+        "2": {"name": "Docker Configuration", "status": "pending", "start_time": null, "end_time": null, "eta_ms": 0, "operations": {}},
+        "3": {"name": "Building Containers", "status": "pending", "start_time": null, "end_time": null, "eta_ms": 0, "operations": {}},
+        "4": {"name": "Starting Services", "status": "pending", "start_time": null, "end_time": null, "eta_ms": 0, "operations": {}},
+        "5": {"name": "Complete", "status": "pending", "start_time": null, "end_time": null, "eta_ms": 0, "operations": {}}
+    },
+    "services": [],
+    "namespace": "",
+    "completed": false
+}
+EOF
+    # Set run_id and start_time
+    local run_id=$(date +%s%N | md5sum | head -c 8)
+    local start_time=$(date -Iseconds)
+    jq --arg id "$run_id" --arg st "$start_time" \
+        '.run_id = $id | .start_time = $st' "$PROGRESS_FILE" > "${PROGRESS_FILE}.tmp" \
+        && mv "${PROGRESS_FILE}.tmp" "$PROGRESS_FILE"
+}
+
+# Update progress file with namespace and services
+update_progress_config() {
+    local namespace=$1
+    shift
+    local services_json="[]"
+    for svc in "$@"; do
+        services_json=$(echo "$services_json" | jq --arg s "$svc" '. + [$s]')
+    done
+    jq --arg ns "$namespace" --argjson svcs "$services_json" \
+        '.namespace = $ns | .services = $svcs' "$PROGRESS_FILE" > "${PROGRESS_FILE}.tmp" \
+        && mv "${PROGRESS_FILE}.tmp" "$PROGRESS_FILE"
+}
+
+# Start a phase
+progress_start_phase() {
+    local phase_num=$1
+    local eta_ms=${2:-0}
+    local start_time=$(date -Iseconds)
+    jq --arg p "$phase_num" --arg st "$start_time" --argjson eta "$eta_ms" \
+        '.current_phase = ($p | tonumber) | .phases[$p].status = "in_progress" | .phases[$p].start_time = $st | .phases[$p].eta_ms = $eta' \
+        "$PROGRESS_FILE" > "${PROGRESS_FILE}.tmp" \
+        && mv "${PROGRESS_FILE}.tmp" "$PROGRESS_FILE"
+}
+
+# End a phase
+progress_end_phase() {
+    local phase_num=$1
+    local end_time=$(date -Iseconds)
+    jq --arg p "$phase_num" --arg et "$end_time" \
+        '.phases[$p].status = "complete" | .phases[$p].end_time = $et' \
+        "$PROGRESS_FILE" > "${PROGRESS_FILE}.tmp" \
+        && mv "${PROGRESS_FILE}.tmp" "$PROGRESS_FILE"
+}
+
+# Start an operation within a phase (for parallel tracking)
+progress_start_operation() {
+    local phase_num=$1
+    local op_name=$2
+    local eta_ms=${3:-0}
+    local start_time=$(date -Iseconds)
+    jq --arg p "$phase_num" --arg op "$op_name" --arg st "$start_time" --argjson eta "$eta_ms" \
+        '.phases[$p].operations[$op] = {"status": "in_progress", "start_time": $st, "end_time": null, "eta_ms": $eta}' \
+        "$PROGRESS_FILE" > "${PROGRESS_FILE}.tmp" \
+        && mv "${PROGRESS_FILE}.tmp" "$PROGRESS_FILE"
+}
+
+# End an operation within a phase
+progress_end_operation() {
+    local phase_num=$1
+    local op_name=$2
+    local status=${3:-"complete"}  # complete or failed
+    local end_time=$(date -Iseconds)
+    jq --arg p "$phase_num" --arg op "$op_name" --arg s "$status" --arg et "$end_time" \
+        '.phases[$p].operations[$op].status = $s | .phases[$p].operations[$op].end_time = $et' \
+        "$PROGRESS_FILE" > "${PROGRESS_FILE}.tmp" \
+        && mv "${PROGRESS_FILE}.tmp" "$PROGRESS_FILE"
+}
+
+# Mark run as complete
+progress_complete() {
+    jq '.completed = true | .current_phase = 5 | .phases["5"].status = "complete"' \
+        "$PROGRESS_FILE" > "${PROGRESS_FILE}.tmp" \
+        && mv "${PROGRESS_FILE}.tmp" "$PROGRESS_FILE"
 }
 
 # Log with timestamp
@@ -1116,10 +1214,6 @@ parse_args() {
             TARGET="$1"
             return
             ;;
-        --dashboard-only)
-            ACTION="dashboard"
-            return
-            ;;
         *)
             ACTION="run"
             ;;
@@ -1144,7 +1238,7 @@ parse_args() {
             INCLUDE_APP="true"
         elif [ "$arg" = "--live" ] || [ "$arg" = "-l" ]; then
             LIVE_LOGS="true"
-        elif [ "$arg" = "--dashboard" ] || [ "$arg" = "--ui" ] || [ "$arg" = "-d" ] || [ "$arg" = "d" ]; then
+        elif [ "$arg" = "--dashboard" ] || [ "$arg" = "-d" ]; then
             DASHBOARD="true"
         elif [ "$arg" = "--local" ]; then
             expect_local_value="true"
@@ -1244,6 +1338,9 @@ do_run() {
     init_metrics
     start_run_timer
 
+    # Initialize progress file for dashboard (clears previous run)
+    init_progress_file
+
     # Validate namespace folder exists
     if [ ! -d "$config_folder" ]; then
         echo -e "${RED}ERROR: Namespace folder not found: $config_folder${NC}"
@@ -1338,6 +1435,9 @@ do_run() {
     [ "$LOCAL_REDIS" = "true" ] && echo -e "${BOLD}Local Redis:${NC} ${GREEN}yes${NC} (Docker container on localhost)"
     [ "$DASHBOARD" = "true" ] && echo -e "${BOLD}Dashboard:${NC} ${GREEN}yes${NC} (Web UI at http://localhost:9999)"
 
+    # Update progress file with config
+    update_progress_config "$NAMESPACE" $services_to_run
+
     # Start dashboard if enabled
     if [ "$DASHBOARD" = "true" ]; then
         echo ""
@@ -1345,7 +1445,9 @@ do_run() {
     fi
 
     # ========== Phase 1: Repository Setup (Parallel) ==========
+    local phase1_eta=$(get_phase_avg "Phase 1: Repository Setup")
     start_phase "Phase 1: Repository Setup"
+    progress_start_phase "1" "$phase1_eta"
 
     local services_ready=""
     local workers_ready=""
@@ -1361,6 +1463,8 @@ do_run() {
 
     # Launch all repository setups in parallel (services + emulators)
     for service in $services_to_run; do
+        local svc_eta=$(get_operation_avg "setup:$service")
+        progress_start_operation "1" "$service" "$svc_eta"
         (
             if setup_repository "$service" > "${parallel_tmp}/${service}.log" 2>&1; then
                 echo "success" > "${parallel_tmp}/${service}.status"
@@ -1373,6 +1477,8 @@ do_run() {
 
     # Launch emulator setups in parallel
     for emulator in $emulators_to_run; do
+        local emu_eta=$(get_operation_avg "setup:$emulator")
+        progress_start_operation "1" "$emulator" "$emu_eta"
         (
             if setup_emulator "$emulator" > "${parallel_tmp}/${emulator}.log" 2>&1; then
                 echo "success" > "${parallel_tmp}/${emulator}.status"
@@ -1398,8 +1504,10 @@ do_run() {
             local status=$(cat "${parallel_tmp}/${service}.status")
             if [ "$status" = "success" ]; then
                 services_ready="$services_ready $service"
+                progress_end_operation "1" "$service" "complete"
             else
                 failed_services="$failed_services $service"
+                progress_end_operation "1" "$service" "failed"
                 echo -e "  ${RED}✗ $service setup failed${NC}"
                 if [ -f "${parallel_tmp}/${service}.log" ]; then
                     echo -e "    ${DIM}Last few lines of setup log:${NC}"
@@ -1408,6 +1516,7 @@ do_run() {
             fi
         else
             failed_services="$failed_services $service"
+            progress_end_operation "1" "$service" "failed"
             echo -e "  ${RED}✗ $service setup incomplete (no status file)${NC}"
         fi
     done
@@ -1422,8 +1531,10 @@ do_run() {
             local status=$(cat "${parallel_tmp}/${emulator}.status")
             if [ "$status" = "success" ]; then
                 emulators_ready="$emulators_ready $emulator"
+                progress_end_operation "1" "$emulator" "complete"
             else
                 failed_services="$failed_services $emulator"
+                progress_end_operation "1" "$emulator" "failed"
                 echo -e "  ${RED}✗ $emulator setup failed${NC}"
             fi
         fi
@@ -1463,9 +1574,12 @@ do_run() {
     fi
 
     end_phase "Phase 1: Repository Setup"
+    progress_end_phase "1"
 
     # ========== Phase 2: Docker Configuration ==========
+    local phase2_eta=$(get_phase_avg "Phase 2: Docker Configuration")
     start_phase "Phase 2: Docker Configuration"
+    progress_start_phase "2" "$phase2_eta"
 
     echo -e "  Generating docker-compose.yml for: ${BOLD}$services_ready${NC}"
     [ -n "$workers_ready" ] && echo -e "  Workers: ${BOLD}$workers_ready${NC}"
@@ -1475,9 +1589,12 @@ do_run() {
     echo -e "  ${GREEN}✓${NC} docker-compose.yml generated with $compose_service_count service(s)"
 
     end_phase "Phase 2: Docker Configuration"
+    progress_end_phase "2"
 
     # ========== Phase 3: Build (parallel with BuildKit) ==========
+    local phase3_eta=$(get_phase_avg "Phase 3: Building Containers")
     start_phase "Phase 3: Building Containers"
+    progress_start_phase "3" "$phase3_eta"
 
     # Check if any frontend service needs GITHUB_NPM_TOKEN
     local has_frontend_service=false
@@ -1559,6 +1676,8 @@ do_run() {
 
     # Launch builds in parallel for each service
     for svc in $all_services; do
+        local build_eta=$(get_operation_avg "build:$svc")
+        progress_start_operation "3" "$svc" "$build_eta"
         (
             local svc_log="${build_tmp}/${svc}.log"
             docker_compose --progress=plain build "$svc" > "$svc_log" 2>&1
@@ -1599,9 +1718,11 @@ do_run() {
             local status=$(cat "${build_tmp}/${svc}.status")
             if [ "$status" = "success" ]; then
                 build_succeeded="$build_succeeded $svc"
+                progress_end_operation "3" "$svc" "complete"
                 echo -e "  ${GREEN}✓${NC} $svc built successfully"
             else
                 build_failed="$build_failed $svc"
+                progress_end_operation "3" "$svc" "failed"
                 echo -e "  ${RED}✗${NC} $svc build failed"
                 # Show error snippet
                 if [ -f "${build_tmp}/${svc}.log" ]; then
@@ -1663,9 +1784,12 @@ do_run() {
     fi
 
     end_phase "Phase 3: Building Containers"
+    progress_end_phase "3"
 
-    # ========== Phase 4 & 5: Redis + Start Containers (Parallel) ==========
+    # ========== Phase 4: Redis + Start Containers (Parallel) ==========
+    local phase4_eta=$(get_phase_avg "Phase 4: Redis + Starting Containers")
     start_phase "Phase 4: Redis + Starting Containers"
+    progress_start_phase "4" "$phase4_eta"
 
     # Start Redis (local Docker or Kubernetes port-forward)
     local redis_pid=""
@@ -1721,10 +1845,12 @@ do_run() {
 
     sleep 2
     end_phase "Phase 4: Redis + Starting Containers"
+    progress_end_phase "4"
 
     # ========== Phase 5: Start Emulator Scripts ==========
     if [ -n "$emulators_ready" ]; then
         start_phase "Phase 5: Starting Android Emulators"
+        progress_start_phase "5" "0"
 
         for emulator in $emulators_ready; do
             local repo=$(yq -r ".emulators.\"${emulator}\".git_repo" $CONFIG_FILE 2>/dev/null)
@@ -1742,7 +1868,11 @@ do_run() {
         done
 
         end_phase "Phase 5: Starting Android Emulators"
+        progress_end_phase "5"
     fi
+
+    # Mark progress as complete
+    progress_complete
 
     # Save metrics for this run
     save_run_metrics
@@ -1859,18 +1989,6 @@ case $ACTION in
         ;;
     restart)
         do_restart
-        ;;
-    dashboard)
-        echo -e "Starting dashboard..."
-        if start_dashboard; then
-            echo ""
-            echo -e "${DIM}Press Ctrl+C to stop${NC}"
-            # Keep running until interrupted
-            wait
-        else
-            echo -e "${RED}Failed to start dashboard${NC}"
-            exit 1
-        fi
         ;;
     run|*)
         do_run
