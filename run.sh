@@ -49,6 +49,43 @@ DASHBOARD="false"
 # Utility Functions
 # ============================================
 
+# Cross-platform timeout function (works on macOS without GNU coreutils)
+run_with_timeout() {
+    local timeout_seconds=$1
+    shift
+    local cmd="$@"
+
+    # Try GNU timeout first (Linux, or macOS with coreutils installed)
+    if command -v timeout &>/dev/null; then
+        timeout "$timeout_seconds" $cmd
+        return $?
+    fi
+
+    # Try gtimeout (macOS with coreutils via brew)
+    if command -v gtimeout &>/dev/null; then
+        gtimeout "$timeout_seconds" $cmd
+        return $?
+    fi
+
+    # Fallback: use background process with kill (works on any POSIX system)
+    $cmd &
+    local pid=$!
+    local count=0
+    while [ $count -lt $timeout_seconds ]; do
+        if ! kill -0 $pid 2>/dev/null; then
+            # Process finished
+            wait $pid
+            return $?
+        fi
+        sleep 1
+        count=$((count + 1))
+    done
+    # Timeout reached, kill the process
+    kill -9 $pid 2>/dev/null
+    wait $pid 2>/dev/null
+    return 124  # Same exit code as GNU timeout
+}
+
 is_valid_namespace() {
     local ns=$1
     for valid in $VALID_NAMESPACES; do
@@ -93,7 +130,7 @@ docker_compose() {
     # Cache the docker compose command detection on first use
     if [ -z "$DOCKER_COMPOSE_CMD" ]; then
         # Use timeout to avoid hanging if Docker daemon is unresponsive
-        if command -v docker &>/dev/null && timeout 5 docker compose version &>/dev/null 2>&1; then
+        if command -v docker &>/dev/null && run_with_timeout 5 docker compose version &>/dev/null 2>&1; then
             DOCKER_COMPOSE_CMD="docker compose"
         elif command -v docker-compose &>/dev/null; then
             DOCKER_COMPOSE_CMD="docker-compose"
@@ -1694,7 +1731,7 @@ do_run() {
         fi
 
         # Try docker info with a generous timeout (30s per attempt)
-        if timeout 30 docker info &>/dev/null 2>&1; then
+        if run_with_timeout 30 docker info &>/dev/null 2>&1; then
             docker_ready=true
             break
         fi
