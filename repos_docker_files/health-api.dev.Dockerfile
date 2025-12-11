@@ -38,16 +38,6 @@ RUN sed -i -e '$a\\' /requirements/common.txt \
 RUN grep -v -E "^PyYAML==|^wrapt==" /requirements/dev.txt > /requirements/dev_fixed.txt && \
     pip install -r /requirements/dev_fixed.txt
 
-# Install error_framework from Orange Health private GitHub repo
-# Using x-access-token format (token as password) for GitHub PAT authentication
-RUN git config --global credential.helper '' && \
-    if [ -n "$PYTHON_CORE_UTILS_TOKEN2" ]; then \
-        pip install git+https://x-access-token:${PYTHON_CORE_UTILS_TOKEN2}@github.com/Orange-Health/error-framework.git@master || \
-        pip install git+https://x-access-token:${PYTHON_CORE_UTILS_TOKEN2}@github.com/Orange-Health/error_framework.git@master; \
-    else \
-        echo "Warning: PYTHON_CORE_UTILS_TOKEN2 not set - error_framework not installed"; \
-    fi
-
 RUN mkdir /app
 WORKDIR /app
 COPY ./app /app
