@@ -29,6 +29,12 @@ COPY ./requirements /requirements
 RUN grep -v -E "^PyYAML==|^wrapt==" /requirements/dev.txt > /requirements/dev_fixed.txt && \
     pip install -r /requirements/dev_fixed.txt
 
+# Install error_framework from Orange Health private GitHub repo
+# This is required by common/v1/scheduler_api_error_manager.py
+RUN pip install git+https://github.com/Orange-Health/error-framework.git@master || \
+    pip install git+https://github.com/Orange-Health/error_framework.git@master || \
+    echo "Warning: error_framework not installed - may need manual installation"
+
 RUN mkdir /app
 WORKDIR /app
 COPY ./app /app
