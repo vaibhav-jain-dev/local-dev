@@ -59,13 +59,7 @@ stats:
 s1 s2 s3 s4 s5 qa auto refresh --include-app:
 	@:
 
-health-api scheduler-api oms-api oms bifrost oms-web:
-	@:
-
-oms-worker oms-worker-scheduler oms-consumer-worker:
-	@:
-
-patient-app doctor-app:
+health-api scheduler-api oms-api oms bifrost oms-web patient-app doctor-app:
 	@:
 
 %:

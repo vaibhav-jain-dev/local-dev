@@ -18,7 +18,7 @@ services:
       - source: configs/health_creds.json
         dest: serviceAccountKey.json
         required: false
-        
+
   scheduler-api:
     enabled: true
     git_repo: git@github.com:Orange-Health/scheduler-api.git
@@ -28,7 +28,7 @@ services:
       - source: configs/scheduler_secrets.py
         dest: app/app/secrets.py
         required: true
-        
+
   oms-api:
     enabled: true
     git_repo: git@github.com:Orange-Health/oms.git
@@ -41,6 +41,11 @@ services:
       - source: configs/oauth-client.json
         dest: config/oauth-client.json
         required: true
+    # Workers - share same repo, different Dockerfiles
+    workers:
+      - oms-worker
+      - oms-worker-scheduler
+      - oms-consumer-worker
 
   # Frontend Services
   bifrost:
@@ -64,34 +69,6 @@ services:
       - source: configs/oms-web.config.js
         dest: config/config.js
         required: true
-
-  # OMS API with workers - workers share the same repo/branch/clone folder
-  # Workers are defined here and get their own Dockerfiles
-  # oms-api:
-  #   workers:
-  #     oms-worker:
-  #       dockerfile: oms-worker.dev.Dockerfile
-  #       port: 8081
-  #     oms-worker-scheduler:
-  #       dockerfile: oms-worker-scheduler.dev.Dockerfile
-  #       port: 8082
-  #     oms-consumer-worker:
-  #       dockerfile: oms-consumer-worker.dev.Dockerfile
-  #       port: 8083
-
-# Workers - share repo with oms-api but have different Dockerfiles
-workers:
-  oms-worker:
-    parent: oms-api
-    port: 8081
-
-  oms-worker-scheduler:
-    parent: oms-api
-    port: 8082
-
-  oms-consumer-worker:
-    parent: oms-api
-    port: 8083
 
 # Emulator Apps - run bash scripts instead of Docker containers
 # These are only included when --include-app flag is passed

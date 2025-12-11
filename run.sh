@@ -615,10 +615,7 @@ setup_emulator() {
 # Setup worker (uses parent repo, different Dockerfile)
 setup_worker() {
     local worker=$1
-    local parent=$(yq eval ".workers.\"${worker}\".parent" $CONFIG_FILE 2>/dev/null)
-    local port=$(yq eval ".workers.\"${worker}\".port" $CONFIG_FILE 2>/dev/null)
-
-    [ "$parent" = "null" ] || [ -z "$parent" ] && { echo -e "    ${RED}✗ No parent configured for $worker${NC}"; return 1; }
+    local parent=$2
 
     # Get parent repo info
     local parent_repo=$(yq eval ".services.\"${parent}\".git_repo" $CONFIG_FILE 2>/dev/null)
@@ -765,10 +762,10 @@ COMPOSE
 COMPOSE
     done
 
-    # Add workers to docker-compose
-    for worker in $workers_to_include; do
-        local parent=$(yq eval ".workers.\"${worker}\".parent" $CONFIG_FILE 2>/dev/null)
-        local port=$(yq eval ".workers.\"${worker}\".port" $CONFIG_FILE 2>/dev/null)
+    # Add workers to docker-compose (format: "worker:parent")
+    for worker_entry in $workers_to_include; do
+        local worker=$(echo "$worker_entry" | cut -d: -f1)
+        local parent=$(echo "$worker_entry" | cut -d: -f2)
         local parent_repo=$(yq eval ".services.\"${parent}\".git_repo" $CONFIG_FILE 2>/dev/null)
         local dir_name=$(basename "$parent_repo" .git)
 
@@ -778,14 +775,13 @@ COMPOSE
             continue
         fi
 
-        # Workers use Go OMS style
+        # Workers use Go OMS style (no ports exposed)
         cat >> docker-compose.yml << COMPOSE
   ${worker}:
     build:
       context: ./cloned/${dir_name}
       dockerfile: ${worker}.dev.Dockerfile
     container_name: ${worker}
-    ports: ["${port}:${port}"]
     volumes:
       - ./cloned/${dir_name}:/go/src/github.com/Orange-Health/oms
     environment:
@@ -961,12 +957,9 @@ do_run() {
     # Determine services to run
     local services_to_run=""
     if [ -n "$SERVICES" ]; then
-        # Validate each service exists in config (check services, workers, or emulators)
+        # Validate each service exists in config (check services or emulators)
         for svc in $SERVICES; do
             if yq eval ".services.\"${svc}\"" $CONFIG_FILE 2>/dev/null | grep -qv "null"; then
-                services_to_run="$services_to_run $svc"
-            elif yq eval ".workers.\"${svc}\"" $CONFIG_FILE 2>/dev/null | grep -qv "null"; then
-                # Worker specified directly - will be handled below
                 services_to_run="$services_to_run $svc"
             elif yq eval ".emulators.\"${svc}\"" $CONFIG_FILE 2>/dev/null | grep -qv "null"; then
                 # Emulator specified directly - will be handled below
@@ -987,15 +980,18 @@ do_run() {
 
     services_to_run=$(echo $services_to_run | xargs)  # trim whitespace
 
-    # Determine workers to run (workers whose parent is in services_to_run)
+    # Determine workers to run (workers defined under each service's workers array)
+    # Format: "worker:parent" to track which service owns the worker
     local workers_to_run=""
-    for worker in $(yq eval '.workers | keys | .[]' $CONFIG_FILE 2>/dev/null); do
-        local parent=$(yq eval ".workers.\"${worker}\".parent" $CONFIG_FILE 2>/dev/null)
-        # Check if parent service is in services_to_run or worker was explicitly requested
-        if echo "$services_to_run" | grep -qw "$parent" || echo "$services_to_run" | grep -qw "$worker"; then
-            workers_to_run="$workers_to_run $worker"
-            # Remove worker from services_to_run if it was explicitly requested
-            services_to_run=$(echo "$services_to_run" | sed "s/\b$worker\b//g" | xargs)
+    for service in $services_to_run; do
+        local workers_count=$(yq eval ".services.\"${service}\".workers | length" $CONFIG_FILE 2>/dev/null || echo 0)
+        if [ "$workers_count" != "null" ] && [ "$workers_count" -gt 0 ]; then
+            for i in $(seq 0 $((workers_count - 1))); do
+                local worker=$(yq eval ".services.\"${service}\".workers[$i]" $CONFIG_FILE 2>/dev/null)
+                if [ -n "$worker" ] && [ "$worker" != "null" ]; then
+                    workers_to_run="$workers_to_run ${worker}:${service}"
+                fi
+            done
         fi
     done
     workers_to_run=$(echo $workers_to_run | xargs)
@@ -1020,7 +1016,9 @@ do_run() {
     emulators_to_run=$(echo $emulators_to_run | xargs)
 
     local service_count=$(echo $services_to_run | wc -w | xargs)
-    local worker_count=$(echo $workers_to_run | wc -w | xargs)
+    # Count workers (format is "worker:parent", so count entries)
+    local worker_count=0
+    [ -n "$workers_to_run" ] && worker_count=$(echo $workers_to_run | wc -w | xargs)
     local emulator_count=$(echo $emulators_to_run | wc -w | xargs)
 
     if [ -z "$services_to_run" ] && [ -z "$workers_to_run" ] && [ -z "$emulators_to_run" ]; then
@@ -1126,11 +1124,14 @@ do_run() {
     done
 
     # Setup workers (after services, as they depend on parent repos)
+    # Format: "worker:parent"
     if [ -n "$workers_to_run" ]; then
         echo -e "  ${DIM}Setting up $worker_count workers...${NC}"
-        for worker in $workers_to_run; do
-            if setup_worker "$worker" > "${parallel_tmp}/${worker}.log" 2>&1; then
-                workers_ready="$workers_ready $worker"
+        for worker_entry in $workers_to_run; do
+            local worker=$(echo "$worker_entry" | cut -d: -f1)
+            local parent=$(echo "$worker_entry" | cut -d: -f2)
+            if setup_worker "$worker" "$parent" > "${parallel_tmp}/${worker}.log" 2>&1; then
+                workers_ready="$workers_ready $worker_entry"
             else
                 failed_services="$failed_services $worker"
             fi
@@ -1321,13 +1322,12 @@ do_run() {
         fi
     done
 
-    # Show workers status
-    for worker in $workers_ready; do
-        local port=$(yq eval ".workers.\"${worker}\".port" $CONFIG_FILE 2>/dev/null)
+    # Show workers status (format: "worker:parent")
+    for worker_entry in $workers_ready; do
+        local worker=$(echo "$worker_entry" | cut -d: -f1)
 
         if docker ps --format "{{.Names}}" 2>/dev/null | grep -q "^${worker}$"; then
             echo -e "${GREEN}✓${NC} ${BOLD}$worker${NC} ${BLUE}[worker]${NC}"
-            echo -e "  └─ http://localhost:${port}"
             running_count=$((running_count + 1))
         else
             echo -e "${RED}✗${NC} ${BOLD}$worker${NC} ${BLUE}[worker]${NC} - failed"
