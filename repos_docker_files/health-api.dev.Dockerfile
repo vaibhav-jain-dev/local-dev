@@ -20,6 +20,7 @@ RUN sed -i 's|http://deb.debian.org/debian|http://archive.debian.org/debian|g' /
     libpcre3-dev \
     python3-dev \
     s4cmd \
+    git \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
