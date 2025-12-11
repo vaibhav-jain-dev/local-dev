@@ -41,7 +41,7 @@ ACTION=""
 TARGET=""
 REFRESH="false"
 INCLUDE_APP="false"
-LIVE_LOGS="false"
+LIVE_LOGS="true"
 LOCAL_REDIS="false"
 DASHBOARD="false"
 
@@ -460,12 +460,13 @@ stream_build_log() {
     local service_padded=$(printf "%-${prefix_width}s" "$service")
 
     # Use tail -f to stream the log file, adding colorized prefix
+    # Show ALL logs without filtering for complete visibility
     tail -f "$log_file" 2>/dev/null | while IFS= read -r line; do
-        # Skip empty lines and some noisy docker output
-        if [ -n "$line" ] && ! echo "$line" | grep -qE "^\s*$|^#[0-9]+ \[internal\]"; then
-            # Truncate very long lines for readability
-            if [ ${#line} -gt 200 ]; then
-                line="${line:0:197}..."
+        # Only skip completely empty lines
+        if [ -n "$line" ]; then
+            # Allow longer lines for complete log output (500 chars)
+            if [ ${#line} -gt 500 ]; then
+                line="${line:0:497}..."
             fi
             echo -e "${color}${service_padded}${NC} │ ${DIM}$line${NC}"
         fi
