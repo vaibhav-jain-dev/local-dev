@@ -74,6 +74,32 @@ is_port_busy() {
     lsof -Pi :${port} -sTCP:LISTEN -t >/dev/null 2>&1
 }
 
+# Convert SSH URL to HTTPS URL with token authentication
+# git@github.com:org/repo.git -> https://token@github.com/org/repo.git
+convert_git_url() {
+    local url=$1
+
+    # If SSH is available and URL is SSH, use as-is
+    if command -v ssh &>/dev/null && [[ "$url" == git@* ]]; then
+        echo "$url"
+        return
+    fi
+
+    # Convert SSH URL to HTTPS with token
+    if [[ "$url" == git@github.com:* ]]; then
+        local repo_path="${url#git@github.com:}"
+        if [ -n "${GITHUB_TOKEN:-}" ]; then
+            echo "https://${GITHUB_TOKEN}@github.com/${repo_path}"
+        else
+            echo "https://github.com/${repo_path}"
+        fi
+        return
+    fi
+
+    # Return URL as-is if already HTTPS or other format
+    echo "$url"
+}
+
 # Docker Compose command helper (uses v2 if available, fallback to v1)
 docker_compose() {
     if command -v docker &>/dev/null && docker compose version &>/dev/null; then
@@ -378,11 +404,14 @@ setup_repository() {
         [ "$clone_avg" -gt 0 ] && eta_msg=" ${DIM}~$(format_duration $clone_avg)${NC}"
         echo -n "    ├─ cloning${eta_msg}..."
 
+        # Convert SSH URL to HTTPS if SSH not available
+        local clone_url=$(convert_git_url "$repo")
+
         start_operation "clone:$service"
         local clone_success=false
         local clone_error=""
         for attempt in 1 2 3; do
-            clone_error=$(git clone "$repo" "cloned/$dir_name" 2>&1)
+            clone_error=$(git clone "$clone_url" "cloned/$dir_name" 2>&1)
             if [ $? -eq 0 ]; then
                 clone_success=true
                 break
@@ -553,10 +582,14 @@ setup_emulator() {
     # Clone if needed
     if [ ! -d "cloned/$dir_name/.git" ]; then
         echo -n "    ├─ cloning..."
+
+        # Convert SSH URL to HTTPS if SSH not available
+        local clone_url=$(convert_git_url "$repo")
+
         start_operation "clone:$emulator"
         local clone_success=false
         for attempt in 1 2 3; do
-            if git clone "$repo" "cloned/$dir_name" >/dev/null 2>&1; then
+            if git clone "$clone_url" "cloned/$dir_name" >/dev/null 2>&1; then
                 clone_success=true
                 break
             fi
@@ -949,6 +982,18 @@ do_run() {
     # Initialize metrics tracking
     init_metrics
     start_run_timer
+
+    # Check for git access - need either SSH or GITHUB_TOKEN for private repos
+    if ! command -v ssh &>/dev/null && [ -z "${GITHUB_TOKEN:-}" ]; then
+        echo -e "${RED}ERROR: Cannot clone repositories - SSH not available and GITHUB_TOKEN not set${NC}"
+        echo -e ""
+        echo -e "${YELLOW}To fix, set GITHUB_TOKEN:${NC}"
+        echo -e "  export GITHUB_TOKEN=\"ghp_your_token_here\""
+        echo -e ""
+        echo -e "${DIM}Create a token at: https://github.com/settings/tokens${NC}"
+        echo -e "${DIM}Required scopes: repo (Full control of private repositories)${NC}"
+        exit 1
+    fi
 
     # Validate namespace folder exists
     if [ ! -d "$config_folder" ]; then
