@@ -1,0 +1,775 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Local Dev Dashboard</title>
+    <style>
+        :root {
+            --bg-primary: #1a1a2e;
+            --bg-secondary: #16213e;
+            --bg-tertiary: #0f3460;
+            --text-primary: #eee;
+            --text-secondary: #aaa;
+            --accent-green: #00d26a;
+            --accent-red: #ff6b6b;
+            --accent-yellow: #ffd93d;
+            --accent-blue: #4ecdc4;
+            --accent-purple: #a855f7;
+            --border-color: #334;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+        }
+
+        .dashboard {
+            display: grid;
+            grid-template-columns: 350px 1fr;
+            grid-template-rows: auto 1fr;
+            height: 100vh;
+            gap: 1px;
+            background: var(--border-color);
+        }
+
+        .header {
+            grid-column: 1 / -1;
+            background: var(--bg-secondary);
+            padding: 15px 25px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .header h1 {
+            font-size: 1.4rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .header h1::before {
+            content: '🚀';
+        }
+
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.85rem;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        .status-dot.connected { background: var(--accent-green); }
+        .status-dot.disconnected { background: var(--accent-red); }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .sidebar {
+            background: var(--bg-secondary);
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .section {
+            padding: 15px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .section-title {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-secondary);
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .build-progress {
+            background: var(--bg-tertiary);
+            border-radius: 8px;
+            padding: 12px;
+        }
+
+        .phase-indicator {
+            font-size: 0.9rem;
+            margin-bottom: 10px;
+            color: var(--accent-blue);
+        }
+
+        .progress-bar {
+            height: 6px;
+            background: var(--bg-primary);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        .progress-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--accent-blue), var(--accent-purple));
+            transition: width 0.5s ease;
+            border-radius: 3px;
+        }
+
+        .services-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .service-card {
+            background: var(--bg-tertiary);
+            border-radius: 8px;
+            padding: 12px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border: 2px solid transparent;
+        }
+
+        .service-card:hover {
+            background: var(--bg-primary);
+        }
+
+        .service-card.active {
+            border-color: var(--accent-blue);
+        }
+
+        .service-card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 6px;
+        }
+
+        .service-name {
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+
+        .service-status {
+            font-size: 0.7rem;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-weight: 500;
+        }
+
+        .service-status.running {
+            background: rgba(0, 210, 106, 0.2);
+            color: var(--accent-green);
+        }
+
+        .service-status.stopped {
+            background: rgba(255, 107, 107, 0.2);
+            color: var(--accent-red);
+        }
+
+        .service-status.building {
+            background: rgba(255, 217, 61, 0.2);
+            color: var(--accent-yellow);
+        }
+
+        .service-info {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+        }
+
+        .main-content {
+            background: var(--bg-primary);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .logs-header {
+            background: var(--bg-secondary);
+            padding: 12px 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .logs-tabs {
+            display: flex;
+            gap: 5px;
+        }
+
+        .logs-tab {
+            padding: 8px 16px;
+            background: var(--bg-tertiary);
+            border: none;
+            color: var(--text-secondary);
+            font-family: inherit;
+            font-size: 0.8rem;
+            cursor: pointer;
+            border-radius: 6px;
+            transition: all 0.2s ease;
+        }
+
+        .logs-tab:hover {
+            background: var(--bg-primary);
+            color: var(--text-primary);
+        }
+
+        .logs-tab.active {
+            background: var(--accent-blue);
+            color: white;
+        }
+
+        .logs-controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .logs-controls button {
+            padding: 6px 12px;
+            background: var(--bg-tertiary);
+            border: none;
+            color: var(--text-primary);
+            font-family: inherit;
+            font-size: 0.75rem;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: all 0.2s ease;
+        }
+
+        .logs-controls button:hover {
+            background: var(--accent-blue);
+        }
+
+        .logs-controls label {
+            font-size: 0.75rem;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            cursor: pointer;
+        }
+
+        .logs-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 15px;
+            font-size: 0.8rem;
+            line-height: 1.6;
+            background: #0d1117;
+        }
+
+        .log-line {
+            white-space: pre-wrap;
+            word-break: break-all;
+            padding: 2px 0;
+        }
+
+        .log-line:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .log-line .timestamp {
+            color: var(--text-secondary);
+            margin-right: 10px;
+        }
+
+        .log-line .service-tag {
+            font-weight: 600;
+            margin-right: 10px;
+            padding: 1px 6px;
+            border-radius: 3px;
+            font-size: 0.7rem;
+        }
+
+        .log-line.error { color: var(--accent-red); }
+        .log-line.warning { color: var(--accent-yellow); }
+        .log-line.success { color: var(--accent-green); }
+        .log-line.info { color: var(--accent-blue); }
+
+        /* Service tag colors */
+        .service-tag.health-api { background: #3b82f6; }
+        .service-tag.scheduler-api { background: #8b5cf6; }
+        .service-tag.oms-api { background: #10b981; }
+        .service-tag.bifrost { background: #f59e0b; }
+        .service-tag.oms-web { background: #ef4444; }
+        .service-tag.oms-worker { background: #06b6d4; }
+        .service-tag.redis { background: #dc2626; }
+        .service-tag.build { background: #6366f1; }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+        }
+
+        .metric-card {
+            background: var(--bg-tertiary);
+            border-radius: 6px;
+            padding: 10px;
+            text-align: center;
+        }
+
+        .metric-value {
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: var(--accent-blue);
+        }
+
+        .metric-label {
+            font-size: 0.65rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        .empty-state::before {
+            content: '📋';
+            font-size: 3rem;
+            margin-bottom: 15px;
+        }
+
+        /* Scrollbar styling */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: var(--bg-primary);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--bg-tertiary);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--border-color);
+        }
+
+        /* Filter input */
+        .filter-input {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-family: inherit;
+            font-size: 0.75rem;
+            width: 150px;
+        }
+
+        .filter-input:focus {
+            outline: none;
+            border-color: var(--accent-blue);
+        }
+
+        .filter-input::placeholder {
+            color: var(--text-secondary);
+        }
+    </style>
+</head>
+<body>
+    <div class="dashboard">
+        <header class="header">
+            <h1>Local Dev Dashboard</h1>
+            <div class="status-indicator">
+                <div class="status-dot connected" id="connection-status"></div>
+                <span id="status-text">Connected</span>
+                <span style="margin-left: 15px; color: var(--text-secondary);" id="last-update"></span>
+            </div>
+        </header>
+
+        <aside class="sidebar">
+            <div class="section">
+                <div class="section-title">📊 Build Progress</div>
+                <div class="build-progress">
+                    <div class="phase-indicator" id="phase-text">Idle</div>
+                    <div class="progress-bar">
+                        <div class="progress-bar-fill" id="progress-fill" style="width: 0%"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="section">
+                <div class="section-title">⏱️ Metrics</div>
+                <div class="metrics-grid">
+                    <div class="metric-card">
+                        <div class="metric-value" id="metric-running">0</div>
+                        <div class="metric-label">Running</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value" id="metric-stopped">0</div>
+                        <div class="metric-label">Stopped</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value" id="metric-uptime">-</div>
+                        <div class="metric-label">Uptime</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value" id="metric-logs">0</div>
+                        <div class="metric-label">Log Lines</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="section" style="flex: 1; overflow-y: auto;">
+                <div class="section-title">🐳 Services</div>
+                <div class="services-list" id="services-list">
+                    <!-- Services will be populated here -->
+                </div>
+            </div>
+        </aside>
+
+        <main class="main-content">
+            <div class="logs-header">
+                <div class="logs-tabs">
+                    <button class="logs-tab active" data-tab="all">All Logs</button>
+                    <button class="logs-tab" data-tab="build">Build</button>
+                    <button class="logs-tab" data-tab="errors">Errors</button>
+                </div>
+                <div class="logs-controls">
+                    <input type="text" class="filter-input" id="log-filter" placeholder="Filter logs...">
+                    <label>
+                        <input type="checkbox" id="auto-scroll" checked> Auto-scroll
+                    </label>
+                    <button id="clear-logs">Clear</button>
+                    <button id="export-logs">Export</button>
+                </div>
+            </div>
+            <div class="logs-container" id="logs-container">
+                <div class="empty-state">
+                    <span>Waiting for logs...</span>
+                    <span style="font-size: 0.8rem; margin-top: 5px;">Start services with <code>make run</code></span>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // State
+        let logs = [];
+        let currentTab = 'all';
+        let selectedService = null;
+        let autoScroll = true;
+        let filterText = '';
+        let logCount = 0;
+        let eventSource = null;
+        let buildEventSource = null;
+
+        // DOM Elements
+        const logsContainer = document.getElementById('logs-container');
+        const servicesList = document.getElementById('services-list');
+        const phaseText = document.getElementById('phase-text');
+        const progressFill = document.getElementById('progress-fill');
+        const connectionStatus = document.getElementById('connection-status');
+        const statusText = document.getElementById('status-text');
+        const lastUpdate = document.getElementById('last-update');
+
+        // Service colors
+        const serviceColors = {
+            'health-api': '#3b82f6',
+            'scheduler-api': '#8b5cf6',
+            'oms-api': '#10b981',
+            'bifrost': '#f59e0b',
+            'oms-web': '#ef4444',
+            'oms-worker': '#06b6d4',
+            'oms-worker-scheduler': '#14b8a6',
+            'oms-consumer-worker': '#0891b2',
+            'redis': '#dc2626',
+            'build': '#6366f1'
+        };
+
+        // Initialize
+        function init() {
+            setupEventListeners();
+            fetchStatus();
+            connectToLogStream();
+            connectToBuildStream();
+            setInterval(fetchStatus, 3000);
+        }
+
+        function setupEventListeners() {
+            // Tab switching
+            document.querySelectorAll('.logs-tab').forEach(tab => {
+                tab.addEventListener('click', () => {
+                    document.querySelectorAll('.logs-tab').forEach(t => t.classList.remove('active'));
+                    tab.classList.add('active');
+                    currentTab = tab.dataset.tab;
+                    renderLogs();
+                });
+            });
+
+            // Auto-scroll toggle
+            document.getElementById('auto-scroll').addEventListener('change', (e) => {
+                autoScroll = e.target.checked;
+            });
+
+            // Filter input
+            document.getElementById('log-filter').addEventListener('input', (e) => {
+                filterText = e.target.value.toLowerCase();
+                renderLogs();
+            });
+
+            // Clear logs
+            document.getElementById('clear-logs').addEventListener('click', () => {
+                logs = [];
+                logCount = 0;
+                renderLogs();
+            });
+
+            // Export logs
+            document.getElementById('export-logs').addEventListener('click', exportLogs);
+        }
+
+        async function fetchStatus() {
+            try {
+                const response = await fetch('/api/status');
+                const data = await response.json();
+                updateServices(data.services);
+                updateBuildProgress(data.build_progress);
+                updateConnectionStatus(true);
+                lastUpdate.textContent = new Date().toLocaleTimeString();
+            } catch (error) {
+                updateConnectionStatus(false);
+                console.error('Failed to fetch status:', error);
+            }
+        }
+
+        function updateServices(services) {
+            let runningCount = 0;
+            let stoppedCount = 0;
+
+            const sortedServices = Object.values(services).sort((a, b) => {
+                // Put running services first
+                if (a.running && !b.running) return -1;
+                if (!a.running && b.running) return 1;
+                return a.name.localeCompare(b.name);
+            });
+
+            servicesList.innerHTML = sortedServices.map(service => {
+                if (service.running) runningCount++;
+                else stoppedCount++;
+
+                const statusClass = service.running ? 'running' : 'stopped';
+                const statusText = service.running ? 'Running' : 'Stopped';
+                const activeClass = selectedService === service.name ? 'active' : '';
+                const color = serviceColors[service.name] || '#888';
+
+                return `
+                    <div class="service-card ${activeClass}" onclick="selectService('${service.name}')" style="border-left: 3px solid ${color}">
+                        <div class="service-card-header">
+                            <span class="service-name">${service.name}</span>
+                            <span class="service-status ${statusClass}">${statusText}</span>
+                        </div>
+                        <div class="service-info">
+                            ${service.type}${service.port ? ` • Port ${service.port}` : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            document.getElementById('metric-running').textContent = runningCount;
+            document.getElementById('metric-stopped').textContent = stoppedCount;
+        }
+
+        function updateBuildProgress(progress) {
+            const phases = ['Repository Setup', 'Docker Configuration', 'Building Containers', 'Starting Containers', 'Starting Emulators'];
+            const phaseNum = progress.phase_number || 0;
+            const percentage = phaseNum > 0 ? (phaseNum / 5) * 100 : 0;
+
+            phaseText.textContent = progress.phase || 'Idle';
+            progressFill.style.width = `${percentage}%`;
+        }
+
+        function updateConnectionStatus(connected) {
+            connectionStatus.className = `status-dot ${connected ? 'connected' : 'disconnected'}`;
+            statusText.textContent = connected ? 'Connected' : 'Disconnected';
+        }
+
+        function selectService(serviceName) {
+            selectedService = selectedService === serviceName ? null : serviceName;
+            document.querySelectorAll('.service-card').forEach(card => {
+                card.classList.toggle('active', card.querySelector('.service-name').textContent === selectedService);
+            });
+            renderLogs();
+        }
+
+        function connectToLogStream() {
+            if (eventSource) eventSource.close();
+
+            eventSource = new EventSource('/api/all-logs/stream');
+
+            eventSource.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.log) {
+                        addLog(data.service || 'unknown', data.log);
+                    }
+                } catch (e) {
+                    console.error('Failed to parse log:', e);
+                }
+            };
+
+            eventSource.onerror = () => {
+                updateConnectionStatus(false);
+                setTimeout(connectToLogStream, 5000);
+            };
+        }
+
+        function connectToBuildStream() {
+            if (buildEventSource) buildEventSource.close();
+
+            buildEventSource = new EventSource('/api/build-logs/stream');
+
+            buildEventSource.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.log) {
+                        addLog('build', data.log);
+                    }
+                } catch (e) {
+                    console.error('Failed to parse build log:', e);
+                }
+            };
+
+            buildEventSource.onerror = () => {
+                setTimeout(connectToBuildStream, 5000);
+            };
+        }
+
+        function addLog(service, message) {
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = {
+                timestamp,
+                service,
+                message: message.trim(),
+                type: getLogType(message)
+            };
+
+            logs.push(logEntry);
+            logCount++;
+
+            // Keep only last 5000 logs
+            if (logs.length > 5000) {
+                logs = logs.slice(-5000);
+            }
+
+            document.getElementById('metric-logs').textContent = logCount;
+            renderLogs();
+        }
+
+        function getLogType(message) {
+            const lower = message.toLowerCase();
+            if (lower.includes('error') || lower.includes('exception') || lower.includes('failed')) return 'error';
+            if (lower.includes('warning') || lower.includes('warn')) return 'warning';
+            if (lower.includes('success') || lower.includes('completed') || lower.includes('✓')) return 'success';
+            if (lower.includes('info') || lower.includes('starting')) return 'info';
+            return '';
+        }
+
+        function renderLogs() {
+            let filteredLogs = logs;
+
+            // Filter by tab
+            if (currentTab === 'build') {
+                filteredLogs = logs.filter(l => l.service === 'build');
+            } else if (currentTab === 'errors') {
+                filteredLogs = logs.filter(l => l.type === 'error');
+            }
+
+            // Filter by selected service
+            if (selectedService) {
+                filteredLogs = filteredLogs.filter(l => l.service === selectedService);
+            }
+
+            // Filter by text
+            if (filterText) {
+                filteredLogs = filteredLogs.filter(l =>
+                    l.message.toLowerCase().includes(filterText) ||
+                    l.service.toLowerCase().includes(filterText)
+                );
+            }
+
+            if (filteredLogs.length === 0) {
+                logsContainer.innerHTML = `
+                    <div class="empty-state">
+                        <span>No logs to display</span>
+                        <span style="font-size: 0.8rem; margin-top: 5px;">
+                            ${logs.length > 0 ? 'Try adjusting your filters' : 'Waiting for log output...'}
+                        </span>
+                    </div>
+                `;
+                return;
+            }
+
+            const html = filteredLogs.slice(-1000).map(log => {
+                const color = serviceColors[log.service] || '#888';
+                return `
+                    <div class="log-line ${log.type}">
+                        <span class="timestamp">${log.timestamp}</span>
+                        <span class="service-tag" style="background: ${color}">${log.service}</span>
+                        ${escapeHtml(log.message)}
+                    </div>
+                `;
+            }).join('');
+
+            logsContainer.innerHTML = html;
+
+            if (autoScroll) {
+                logsContainer.scrollTop = logsContainer.scrollHeight;
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function exportLogs() {
+            const content = logs.map(l => `[${l.timestamp}] [${l.service}] ${l.message}`).join('\n');
+            const blob = new Blob([content], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `logs-${new Date().toISOString().slice(0, 10)}.txt`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        // Start
+        init();
+    </script>
+</body>
+</html>

@@ -21,6 +21,7 @@ BOLD='\033[1m'
 DIM='\033[2m'
 
 # Configuration
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_FILE="repos_docker_files/config.yaml"
 LOG_DIR="logs"
 CACHE_FILE="logs/cache.txt"
@@ -41,6 +42,7 @@ REFRESH="false"
 INCLUDE_APP="false"
 LIVE_LOGS="false"
 LOCAL_REDIS="false"
+DASHBOARD="false"
 
 # ============================================
 # Utility Functions
@@ -406,6 +408,73 @@ stop_live_monitor() {
     # Small delay to ensure clean output
     sleep 0.2
     echo -e "\n  ${CYAN}════════════════════════════════════════════════════════════════${NC}\n"
+}
+
+# ============================================
+# Dashboard Functions
+# ============================================
+
+start_dashboard() {
+    local dashboard_dir="${SCRIPT_DIR}/dashboard"
+
+    # Check if dashboard exists
+    if [ ! -f "$dashboard_dir/server.py" ]; then
+        echo -e "  ${YELLOW}⚠${NC} Dashboard not found at $dashboard_dir"
+        return 1
+    fi
+
+    # Kill any existing dashboard
+    pkill -f "dashboard/server.py" 2>/dev/null || true
+
+    # Check if Python3 is available
+    if ! command -v python3 &>/dev/null; then
+        echo -e "  ${YELLOW}⚠${NC} Python3 not found - skipping dashboard"
+        return 1
+    fi
+
+    # Setup virtual environment if needed
+    if [ ! -d "$dashboard_dir/venv" ]; then
+        echo -e "  Setting up dashboard environment..."
+        python3 -m venv "$dashboard_dir/venv" 2>/dev/null
+    fi
+
+    # Install dependencies if needed
+    if [ ! -f "$dashboard_dir/venv/.deps_installed" ]; then
+        source "$dashboard_dir/venv/bin/activate"
+        pip install -q flask flask-cors pyyaml 2>/dev/null
+        touch "$dashboard_dir/venv/.deps_installed"
+        deactivate
+    fi
+
+    # Start dashboard in background
+    (
+        cd "$dashboard_dir"
+        source venv/bin/activate
+        python3 server.py > "$LOG_DIR/dashboard.log" 2>&1
+    ) &
+
+    DASHBOARD_PID=$!
+    echo $DASHBOARD_PID > "$LOG_DIR/dashboard.pid"
+
+    # Wait for server to start
+    sleep 2
+
+    if kill -0 $DASHBOARD_PID 2>/dev/null; then
+        echo -e "  ${GREEN}✓${NC} Dashboard started at ${CYAN}http://localhost:9999${NC}"
+        return 0
+    else
+        echo -e "  ${YELLOW}⚠${NC} Dashboard failed to start - check $LOG_DIR/dashboard.log"
+        return 1
+    fi
+}
+
+stop_dashboard() {
+    if [ -f "$LOG_DIR/dashboard.pid" ]; then
+        local pid=$(cat "$LOG_DIR/dashboard.pid")
+        kill $pid 2>/dev/null || true
+        rm -f "$LOG_DIR/dashboard.pid"
+    fi
+    pkill -f "dashboard/server.py" 2>/dev/null || true
 }
 
 # ============================================
@@ -1043,6 +1112,10 @@ parse_args() {
             TARGET="$1"
             return
             ;;
+        --dashboard-only)
+            ACTION="dashboard"
+            return
+            ;;
         *)
             ACTION="run"
             ;;
@@ -1067,6 +1140,8 @@ parse_args() {
             INCLUDE_APP="true"
         elif [ "$arg" = "--live" ] || [ "$arg" = "-l" ]; then
             LIVE_LOGS="true"
+        elif [ "$arg" = "--dashboard" ] || [ "$arg" = "--ui" ] || [ "$arg" = "-d" ]; then
+            DASHBOARD="true"
         elif [ "$arg" = "--local" ]; then
             expect_local_value="true"
         else
@@ -1257,6 +1332,13 @@ do_run() {
     [ "$REFRESH" = "true" ] && echo -e "${BOLD}Refresh:${NC} ${GREEN}yes${NC} (will pull latest code)"
     [ "$INCLUDE_APP" = "true" ] && echo -e "${BOLD}Include Apps:${NC} ${GREEN}yes${NC} (Android emulators)"
     [ "$LOCAL_REDIS" = "true" ] && echo -e "${BOLD}Local Redis:${NC} ${GREEN}yes${NC} (Docker container on localhost)"
+    [ "$DASHBOARD" = "true" ] && echo -e "${BOLD}Dashboard:${NC} ${GREEN}yes${NC} (Web UI at http://localhost:9999)"
+
+    # Start dashboard if enabled
+    if [ "$DASHBOARD" = "true" ]; then
+        echo ""
+        start_dashboard
+    fi
 
     # ========== Phase 1: Repository Setup (Parallel) ==========
     start_phase "Phase 1: Repository Setup"
@@ -1769,6 +1851,15 @@ case $ACTION in
         ;;
     restart)
         do_restart
+        ;;
+    dashboard)
+        echo -e "Starting dashboard..."
+        start_dashboard
+        echo ""
+        echo -e "${CYAN}Dashboard is running at ${BOLD}http://localhost:9999${NC}"
+        echo -e "${DIM}Press Ctrl+C to stop${NC}"
+        # Keep running until interrupted
+        wait
         ;;
     run|*)
         do_run
