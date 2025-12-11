@@ -3,22 +3,27 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Local Dev Dashboard</title>
+    <title>Local Dev - Build Logs</title>
     <style>
         :root {
-            --bg-primary: #0d1117;
-            --bg-secondary: #161b22;
-            --bg-tertiary: #21262d;
-            --bg-card: #1c2128;
+            --bg-primary: #0a0e14;
+            --bg-secondary: #0f1419;
+            --bg-terminal: #0d1117;
+            --bg-card: #161b22;
             --text-primary: #e6edf3;
             --text-secondary: #8b949e;
-            --text-muted: #6e7681;
+            --text-muted: #484f58;
             --accent-green: #3fb950;
             --accent-red: #f85149;
             --accent-yellow: #d29922;
             --accent-blue: #58a6ff;
+            --accent-cyan: #39c5cf;
             --accent-purple: #a371f7;
-            --border-color: #30363d;
+            --accent-orange: #ff7b00;
+            --border-color: #21262d;
+            --glow-green: rgba(63, 185, 80, 0.4);
+            --glow-blue: rgba(88, 166, 255, 0.3);
+            --glow-orange: rgba(255, 123, 0, 0.4);
         }
 
         * {
@@ -28,68 +33,88 @@
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif;
+            font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', Consolas, monospace;
             background: var(--bg-primary);
             color: var(--text-primary);
-            min-height: 100vh;
-            overflow-y: auto;
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
         }
 
-        .dashboard {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 20px;
-        }
-
-        /* Header */
+        /* Header Bar - Compact */
         .header {
             background: var(--bg-secondary);
-            padding: 16px 20px;
-            border-radius: 8px;
-            margin-bottom: 16px;
-            border: 1px solid var(--border-color);
+            padding: 12px 20px;
+            border-bottom: 1px solid var(--border-color);
             display: flex;
             align-items: center;
             justify-content: space-between;
+            flex-shrink: 0;
         }
 
-        .header h1 {
-            font-size: 1.25rem;
-            font-weight: 600;
+        .header-left {
             display: flex;
             align-items: center;
-            gap: 10px;
+            gap: 16px;
         }
 
-        .header-info {
+        .logo {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: var(--accent-orange);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .logo-icon {
+            font-size: 1.3rem;
+        }
+
+        .namespace-badge {
+            background: var(--bg-card);
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            border: 1px solid var(--border-color);
+        }
+
+        .header-right {
             display: flex;
             align-items: center;
             gap: 20px;
-            font-size: 0.875rem;
         }
 
-        .status-badge {
+        .status-indicator {
             display: flex;
             align-items: center;
-            gap: 6px;
-            padding: 4px 12px;
-            border-radius: 20px;
-            background: var(--bg-tertiary);
-            font-size: 0.75rem;
-            font-weight: 500;
+            gap: 8px;
+            padding: 6px 14px;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            transition: all 0.3s ease;
         }
 
-        .status-badge.running {
-            background: rgba(63, 185, 80, 0.15);
-            color: var(--accent-green);
-        }
-
-        .status-badge.complete {
-            background: rgba(88, 166, 255, 0.15);
+        .status-indicator.running {
+            background: linear-gradient(135deg, rgba(88, 166, 255, 0.15), rgba(88, 166, 255, 0.05));
+            border: 1px solid var(--accent-blue);
             color: var(--accent-blue);
+            box-shadow: 0 0 20px var(--glow-blue);
         }
 
-        .status-badge.idle {
+        .status-indicator.complete {
+            background: linear-gradient(135deg, rgba(63, 185, 80, 0.15), rgba(63, 185, 80, 0.05));
+            border: 1px solid var(--accent-green);
+            color: var(--accent-green);
+            box-shadow: 0 0 20px var(--glow-green);
+        }
+
+        .status-indicator.idle {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
             color: var(--text-secondary);
         }
 
@@ -100,447 +125,560 @@
             background: currentColor;
         }
 
-        .status-badge.running .status-dot {
-            animation: pulse 1.5s infinite;
+        .status-indicator.running .status-dot {
+            animation: pulse 1.2s ease-in-out infinite;
         }
 
         @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.4; }
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(0.9); }
         }
 
-        /* Summary Bar */
-        .summary-bar {
-            display: flex;
-            gap: 16px;
-            margin-bottom: 16px;
-            flex-wrap: wrap;
+        .timer {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: var(--accent-cyan);
+            font-variant-numeric: tabular-nums;
         }
 
-        .summary-item {
+        /* Progress Bar - Compact Inline */
+        .progress-section {
             background: var(--bg-secondary);
-            padding: 12px 20px;
-            border-radius: 8px;
-            border: 1px solid var(--border-color);
-            flex: 1;
-            min-width: 150px;
+            padding: 10px 20px;
+            border-bottom: 1px solid var(--border-color);
+            flex-shrink: 0;
         }
 
-        .summary-label {
-            font-size: 0.75rem;
-            color: var(--text-secondary);
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        .summary-value {
-            font-size: 1.5rem;
-            font-weight: 600;
-            margin-top: 4px;
-        }
-
-        .summary-value.green { color: var(--accent-green); }
-        .summary-value.yellow { color: var(--accent-yellow); }
-        .summary-value.blue { color: var(--accent-blue); }
-
-        /* Phase Sections */
-        .phase-section {
-            background: var(--bg-secondary);
-            border-radius: 8px;
-            margin-bottom: 12px;
-            border: 1px solid var(--border-color);
-            overflow: hidden;
-            transition: all 0.3s ease;
-        }
-
-        .phase-section.collapsed .phase-content {
-            display: none;
-        }
-
-        .phase-header {
-            padding: 14px 20px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            cursor: pointer;
-            user-select: none;
-            transition: background 0.2s ease;
-        }
-
-        .phase-header:hover {
-            background: var(--bg-tertiary);
-        }
-
-        .phase-header-left {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-
-        .phase-number {
-            width: 28px;
-            height: 28px;
-            border-radius: 50%;
-            background: var(--bg-tertiary);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 0.875rem;
-            font-weight: 600;
-        }
-
-        .phase-section.in_progress .phase-number {
-            background: var(--accent-blue);
-            color: white;
-        }
-
-        .phase-section.complete .phase-number {
-            background: var(--accent-green);
-            color: white;
-        }
-
-        .phase-section.complete .phase-number::after {
-            content: '✓';
-            font-size: 0.75rem;
-        }
-
-        .phase-section.complete .phase-number span {
-            display: none;
-        }
-
-        .phase-title {
-            font-weight: 600;
-            font-size: 0.9375rem;
-        }
-
-        .phase-header-right {
-            display: flex;
-            align-items: center;
-            gap: 16px;
-        }
-
-        .phase-eta {
-            font-size: 0.8125rem;
-            color: var(--text-secondary);
-        }
-
-        .phase-status {
-            font-size: 0.75rem;
-            padding: 4px 10px;
-            border-radius: 12px;
-            font-weight: 500;
-        }
-
-        .phase-status.pending {
-            background: var(--bg-tertiary);
-            color: var(--text-secondary);
-        }
-
-        .phase-status.in_progress {
-            background: rgba(88, 166, 255, 0.15);
-            color: var(--accent-blue);
-        }
-
-        .phase-status.complete {
-            background: rgba(63, 185, 80, 0.15);
-            color: var(--accent-green);
-        }
-
-        .collapse-icon {
-            font-size: 0.75rem;
-            color: var(--text-muted);
-            transition: transform 0.2s ease;
-        }
-
-        .phase-section.collapsed .collapse-icon {
-            transform: rotate(-90deg);
-        }
-
-        /* Phase Content */
-        .phase-content {
-            padding: 0 20px 16px;
-            border-top: 1px solid var(--border-color);
-        }
-
-        /* Operations Matrix */
-        .operations-matrix {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-            gap: 10px;
-            margin-top: 14px;
-        }
-
-        .operation-card {
-            background: var(--bg-card);
-            border-radius: 6px;
-            padding: 12px;
-            border: 1px solid var(--border-color);
-            transition: all 0.2s ease;
-        }
-
-        .operation-card.in_progress {
-            border-color: var(--accent-blue);
-            box-shadow: 0 0 0 1px var(--accent-blue);
-        }
-
-        .operation-card.complete {
-            opacity: 0.7;
-        }
-
-        .operation-card.failed {
-            border-color: var(--accent-red);
-        }
-
-        .operation-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            margin-bottom: 8px;
-        }
-
-        .operation-name {
-            font-weight: 600;
-            font-size: 0.875rem;
-        }
-
-        .operation-status-icon {
-            width: 18px;
-            height: 18px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 0.625rem;
-        }
-
-        .operation-status-icon.pending {
-            background: var(--bg-tertiary);
-            color: var(--text-muted);
-        }
-
-        .operation-status-icon.in_progress {
-            background: var(--accent-blue);
-            color: white;
-            animation: spin 1s linear infinite;
-        }
-
-        .operation-status-icon.complete {
-            background: var(--accent-green);
-            color: white;
-        }
-
-        .operation-status-icon.failed {
-            background: var(--accent-red);
-            color: white;
-        }
-
-        @keyframes spin {
-            from { transform: rotate(0deg); }
-            to { transform: rotate(360deg); }
-        }
-
-        .operation-progress {
-            height: 4px;
-            background: var(--bg-tertiary);
-            border-radius: 2px;
-            overflow: hidden;
-        }
-
-        .operation-progress-fill {
-            height: 100%;
-            background: var(--accent-blue);
-            transition: width 0.3s ease;
-        }
-
-        .operation-card.complete .operation-progress-fill {
-            background: var(--accent-green);
-        }
-
-        .operation-card.failed .operation-progress-fill {
-            background: var(--accent-red);
-        }
-
-        .operation-eta {
-            font-size: 0.75rem;
-            color: var(--text-muted);
-            margin-top: 6px;
-            display: flex;
-            justify-content: space-between;
-        }
-
-        /* Parallelism Indicator */
-        .parallelism-info {
+        .progress-track {
             display: flex;
             align-items: center;
             gap: 8px;
-            font-size: 0.8125rem;
-            color: var(--text-secondary);
-            margin-top: 14px;
-            padding-top: 12px;
-            border-top: 1px solid var(--border-color);
         }
 
-        .parallelism-count {
-            background: var(--bg-tertiary);
-            padding: 2px 8px;
+        .phase-step {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
             border-radius: 4px;
-            font-weight: 600;
+            font-size: 0.7rem;
+            transition: all 0.3s ease;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            color: var(--text-muted);
+        }
+
+        .phase-step.active {
+            background: rgba(88, 166, 255, 0.15);
+            border-color: var(--accent-blue);
             color: var(--accent-blue);
         }
 
-        /* Empty State */
-        .empty-state {
-            text-align: center;
-            padding: 60px 20px;
-            color: var(--text-secondary);
+        .phase-step.complete {
+            background: rgba(63, 185, 80, 0.1);
+            border-color: var(--accent-green);
+            color: var(--accent-green);
         }
 
-        .empty-state-icon {
-            font-size: 3rem;
-            margin-bottom: 16px;
+        .phase-connector {
+            width: 20px;
+            height: 2px;
+            background: var(--border-color);
+            transition: background 0.3s ease;
         }
 
-        .empty-state h2 {
-            font-size: 1.25rem;
-            font-weight: 600;
-            color: var(--text-primary);
-            margin-bottom: 8px;
+        .phase-connector.complete {
+            background: var(--accent-green);
         }
 
-        .empty-state p {
-            font-size: 0.9375rem;
+        .phase-icon {
+            font-size: 0.9rem;
         }
 
-        .empty-state code {
-            background: var(--bg-tertiary);
-            padding: 2px 8px;
-            border-radius: 4px;
-            font-family: 'SF Mono', Consolas, monospace;
+        /* Main Log Area - Takes Up Most Space */
+        .log-section {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+            padding: 16px 20px;
         }
 
-        /* Logs Section (collapsed by default) */
-        .logs-section {
-            background: var(--bg-secondary);
-            border-radius: 8px;
-            border: 1px solid var(--border-color);
-            margin-top: 16px;
-        }
-
-        .logs-header {
-            padding: 14px 20px;
+        .log-header {
             display: flex;
             align-items: center;
             justify-content: space-between;
+            margin-bottom: 12px;
+            flex-shrink: 0;
+        }
+
+        .log-title {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .log-title-icon {
+            color: var(--accent-orange);
+        }
+
+        .log-count {
+            background: var(--bg-card);
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 0.7rem;
+            color: var(--text-muted);
+        }
+
+        .log-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .log-btn {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            color: var(--text-secondary);
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 0.7rem;
             cursor: pointer;
+            transition: all 0.2s ease;
+            font-family: inherit;
         }
 
-        .logs-header:hover {
-            background: var(--bg-tertiary);
+        .log-btn:hover {
+            background: var(--bg-secondary);
+            border-color: var(--accent-blue);
+            color: var(--accent-blue);
         }
 
-        .logs-content {
-            display: none;
-            border-top: 1px solid var(--border-color);
+        /* Terminal-Style Log Container */
+        .log-container {
+            flex: 1;
+            background: var(--bg-terminal);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+            box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.3);
         }
 
-        .logs-section.expanded .logs-content {
-            display: block;
+        .log-terminal-header {
+            background: var(--bg-card);
+            padding: 8px 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border-bottom: 1px solid var(--border-color);
+            flex-shrink: 0;
         }
 
-        .logs-container {
-            background: var(--bg-primary);
-            padding: 12px;
-            max-height: 300px;
-            overflow-y: auto;
-            font-family: 'SF Mono', Consolas, monospace;
+        .terminal-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+
+        .terminal-dot.red { background: #ff5f56; }
+        .terminal-dot.yellow { background: #ffbd2e; }
+        .terminal-dot.green { background: #27c93f; }
+
+        .terminal-title {
+            flex: 1;
+            text-align: center;
             font-size: 0.75rem;
-            line-height: 1.6;
+            color: var(--text-muted);
+        }
+
+        .log-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px 16px;
+            font-size: 0.8rem;
+            line-height: 1.7;
+            min-height: 0;
         }
 
         .log-line {
             padding: 2px 0;
             white-space: pre-wrap;
-            word-break: break-all;
+            word-break: break-word;
+            display: flex;
+            gap: 12px;
         }
 
-        .log-line.error { color: var(--accent-red); }
-        .log-line.success { color: var(--accent-green); }
+        .log-time {
+            color: var(--text-muted);
+            flex-shrink: 0;
+            font-size: 0.7rem;
+            opacity: 0.7;
+        }
 
-        /* Responsive */
-        @media (max-width: 768px) {
-            .dashboard {
-                padding: 12px;
-            }
+        .log-message {
+            flex: 1;
+        }
 
-            .header {
-                flex-direction: column;
-                gap: 12px;
-                text-align: center;
-            }
+        .log-line.error .log-message { color: var(--accent-red); }
+        .log-line.success .log-message { color: var(--accent-green); }
+        .log-line.warning .log-message { color: var(--accent-yellow); }
+        .log-line.info .log-message { color: var(--accent-blue); }
+        .log-line.phase .log-message {
+            color: var(--accent-orange);
+            font-weight: 600;
+            padding: 4px 0;
+        }
 
-            .summary-bar {
-                flex-direction: column;
-            }
+        /* Scrollbar Styling */
+        .log-content::-webkit-scrollbar {
+            width: 8px;
+        }
 
-            .operations-matrix {
-                grid-template-columns: 1fr;
-            }
+        .log-content::-webkit-scrollbar-track {
+            background: var(--bg-terminal);
+        }
+
+        .log-content::-webkit-scrollbar-thumb {
+            background: var(--border-color);
+            border-radius: 4px;
+        }
+
+        .log-content::-webkit-scrollbar-thumb:hover {
+            background: var(--text-muted);
+        }
+
+        /* Completion Overlay */
+        .completion-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(10, 14, 20, 0.95);
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .completion-overlay.visible {
+            display: flex;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .completion-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--accent-green);
+            border-radius: 16px;
+            padding: 40px 60px;
+            text-align: center;
+            box-shadow: 0 0 60px var(--glow-green);
+            animation: scaleIn 0.3s ease;
+        }
+
+        @keyframes scaleIn {
+            from { transform: scale(0.9); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
+        }
+
+        .completion-icon {
+            font-size: 4rem;
+            margin-bottom: 16px;
+        }
+
+        .completion-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--accent-green);
+            margin-bottom: 8px;
+        }
+
+        .completion-subtitle {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            margin-bottom: 24px;
+        }
+
+        .completion-timer {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: var(--accent-cyan);
+            margin-bottom: 8px;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .completion-timer-label {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            margin-bottom: 24px;
+        }
+
+        .completion-actions {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+        }
+
+        .completion-btn {
+            padding: 10px 24px;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-family: inherit;
+            border: none;
+        }
+
+        .completion-btn.primary {
+            background: var(--accent-green);
+            color: var(--bg-primary);
+        }
+
+        .completion-btn.primary:hover {
+            background: #4cc764;
+            transform: translateY(-1px);
+        }
+
+        .completion-btn.secondary {
+            background: var(--bg-card);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+        }
+
+        .completion-btn.secondary:hover {
+            border-color: var(--accent-blue);
+            color: var(--accent-blue);
+        }
+
+        /* Empty State */
+        .empty-state {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-muted);
+        }
+
+        .empty-icon {
+            font-size: 3rem;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+
+        .empty-text {
+            font-size: 0.9rem;
+        }
+
+        .empty-hint {
+            font-size: 0.75rem;
+            margin-top: 8px;
+            color: var(--text-muted);
+        }
+
+        .empty-hint code {
+            background: var(--bg-card);
+            padding: 2px 6px;
+            border-radius: 3px;
+            color: var(--accent-orange);
+        }
+
+        /* Cursor blink for terminal effect */
+        .cursor {
+            display: inline-block;
+            width: 8px;
+            height: 1.1em;
+            background: var(--accent-green);
+            margin-left: 2px;
+            animation: blink 1s step-end infinite;
+            vertical-align: middle;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0; }
+        }
+
+        /* Stats Bar at bottom */
+        .stats-bar {
+            background: var(--bg-secondary);
+            padding: 8px 20px;
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            flex-shrink: 0;
+        }
+
+        .stats-left {
+            display: flex;
+            gap: 20px;
+        }
+
+        .stat-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .stat-value {
+            color: var(--text-secondary);
+            font-weight: 600;
+        }
+
+        .stats-right {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .connection-status {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .connection-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--accent-green);
+        }
+
+        .connection-dot.disconnected {
+            background: var(--accent-red);
         }
     </style>
 </head>
 <body>
-    <div class="dashboard">
-        <!-- Header -->
-        <header class="header">
-            <h1>🍊 Orange Health Local Dev</h1>
-            <div class="header-info">
-                <span id="namespace-display" style="color: var(--text-secondary);">-</span>
-                <div class="status-badge idle" id="status-badge">
-                    <span class="status-dot"></span>
-                    <span id="status-text">Idle</span>
-                </div>
+    <!-- Header -->
+    <header class="header">
+        <div class="header-left">
+            <div class="logo">
+                <span class="logo-icon">🍊</span>
+                <span>Local Dev</span>
             </div>
-        </header>
+            <span class="namespace-badge" id="namespace-badge">-</span>
+        </div>
+        <div class="header-right">
+            <div class="timer" id="elapsed-timer">00:00</div>
+            <div class="status-indicator idle" id="status-indicator">
+                <span class="status-dot"></span>
+                <span id="status-text">Idle</span>
+            </div>
+        </div>
+    </header>
 
-        <!-- Summary Bar -->
-        <div class="summary-bar">
-            <div class="summary-item">
-                <div class="summary-label">Current Phase</div>
-                <div class="summary-value blue" id="current-phase">-</div>
+    <!-- Progress Track -->
+    <div class="progress-section">
+        <div class="progress-track" id="progress-track">
+            <div class="phase-step" data-phase="1">
+                <span class="phase-icon">📁</span>
+                <span>Repos</span>
             </div>
-            <div class="summary-item">
-                <div class="summary-label">Services</div>
-                <div class="summary-value" id="services-count">0</div>
+            <div class="phase-connector" data-connector="1"></div>
+            <div class="phase-step" data-phase="2">
+                <span class="phase-icon">🐳</span>
+                <span>Docker</span>
             </div>
-            <div class="summary-item">
-                <div class="summary-label">In Progress</div>
-                <div class="summary-value yellow" id="in-progress-count">0</div>
+            <div class="phase-connector" data-connector="2"></div>
+            <div class="phase-step" data-phase="3">
+                <span class="phase-icon">🔨</span>
+                <span>Build</span>
             </div>
-            <div class="summary-item">
-                <div class="summary-label">Elapsed Time</div>
-                <div class="summary-value green" id="elapsed-time">0s</div>
+            <div class="phase-connector" data-connector="3"></div>
+            <div class="phase-step" data-phase="4">
+                <span class="phase-icon">🚀</span>
+                <span>Start</span>
+            </div>
+            <div class="phase-connector" data-connector="4"></div>
+            <div class="phase-step" data-phase="5">
+                <span class="phase-icon">✅</span>
+                <span>Done</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Log Section -->
+    <div class="log-section">
+        <div class="log-header">
+            <div class="log-title">
+                <span class="log-title-icon">▶</span>
+                <span>Build Output</span>
+                <span class="log-count" id="log-count">0 lines</span>
+            </div>
+            <div class="log-actions">
+                <button class="log-btn" onclick="clearLogs()">Clear</button>
+                <button class="log-btn" onclick="toggleAutoScroll()" id="autoscroll-btn">Auto-scroll: ON</button>
             </div>
         </div>
 
-        <!-- Phases Container -->
-        <div id="phases-container">
-            <div class="empty-state">
-                <div class="empty-state-icon">📦</div>
-                <h2>Waiting for build...</h2>
-                <p>Start a build with <code>make run -d</code> or <code>make run --dashboard</code></p>
+        <div class="log-container">
+            <div class="log-terminal-header">
+                <span class="terminal-dot red"></span>
+                <span class="terminal-dot yellow"></span>
+                <span class="terminal-dot green"></span>
+                <span class="terminal-title">build_output.log</span>
+            </div>
+            <div class="log-content" id="log-content">
+                <div class="empty-state" id="empty-state">
+                    <div class="empty-icon">📋</div>
+                    <div class="empty-text">Waiting for logs...</div>
+                    <div class="empty-hint">Run <code>make run -d</code> to start</div>
+                </div>
             </div>
         </div>
+    </div>
 
-        <!-- Logs Section (collapsible) -->
-        <div class="logs-section" id="logs-section">
-            <div class="logs-header" onclick="toggleLogs()">
-                <span style="font-weight: 600;">📝 Build Logs</span>
-                <span class="collapse-icon">▼</span>
+    <!-- Stats Bar -->
+    <div class="stats-bar">
+        <div class="stats-left">
+            <div class="stat-item">
+                <span>Services:</span>
+                <span class="stat-value" id="services-count">0</span>
             </div>
-            <div class="logs-content">
-                <div class="logs-container" id="logs-container">
-                    <div class="log-line" style="color: var(--text-muted);">Waiting for logs...</div>
-                </div>
+            <div class="stat-item">
+                <span>Phase:</span>
+                <span class="stat-value" id="current-phase">-</span>
+            </div>
+            <div class="stat-item">
+                <span>Operations:</span>
+                <span class="stat-value" id="operations-count">0</span>
+            </div>
+        </div>
+        <div class="stats-right">
+            <div class="connection-status">
+                <span class="connection-dot" id="connection-dot"></span>
+                <span id="connection-text">Connected</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Completion Overlay -->
+    <div class="completion-overlay" id="completion-overlay">
+        <div class="completion-card">
+            <div class="completion-icon">🎉</div>
+            <div class="completion-title">Build Complete!</div>
+            <div class="completion-subtitle">All services are running successfully</div>
+            <div class="completion-timer" id="shutdown-timer">60</div>
+            <div class="completion-timer-label">seconds until auto-shutdown</div>
+            <div class="completion-actions">
+                <button class="completion-btn secondary" onclick="cancelShutdown()">Keep Open</button>
+                <button class="completion-btn primary" onclick="closeNow()">Close Now</button>
             </div>
         </div>
     </div>
@@ -553,15 +691,11 @@
         let buildLogSource = null;
         let logs = [];
         let elapsedInterval = null;
-
-        // Phase names
-        const PHASE_NAMES = {
-            '1': 'Repository Setup',
-            '2': 'Docker Configuration',
-            '3': 'Building Containers',
-            '4': 'Starting Services',
-            '5': 'Complete'
-        };
+        let autoScroll = true;
+        let isComplete = false;
+        let shutdownTimer = null;
+        let shutdownSeconds = 60;
+        let completionHandled = false;
 
         // Initialize
         function init() {
@@ -574,15 +708,19 @@
             if (progressSource) progressSource.close();
 
             progressSource = new EventSource('/api/progress/stream');
+            updateConnectionStatus(true);
 
             progressSource.onmessage = (event) => {
                 try {
                     const msg = JSON.parse(event.data);
                     if (msg.type === 'new_run') {
-                        // New run started - clear everything
                         currentRunId = msg.data.run_id;
                         startTime = new Date(msg.data.start_time);
                         logs = [];
+                        isComplete = false;
+                        completionHandled = false;
+                        hideCompletionOverlay();
+                        clearLogs();
                         renderProgress(msg.data);
                     } else if (msg.type === 'update') {
                         renderProgress(msg.data);
@@ -593,6 +731,7 @@
             };
 
             progressSource.onerror = () => {
+                updateConnectionStatus(false);
                 setTimeout(connectToProgressStream, 3000);
             };
         }
@@ -618,199 +757,246 @@
             };
         }
 
+        function updateConnectionStatus(connected) {
+            const dot = document.getElementById('connection-dot');
+            const text = document.getElementById('connection-text');
+            if (connected) {
+                dot.classList.remove('disconnected');
+                text.textContent = 'Connected';
+            } else {
+                dot.classList.add('disconnected');
+                text.textContent = 'Reconnecting...';
+            }
+        }
+
         function startElapsedTimer() {
             elapsedInterval = setInterval(() => {
                 if (startTime) {
                     const elapsed = Math.floor((Date.now() - startTime.getTime()) / 1000);
-                    document.getElementById('elapsed-time').textContent = formatTime(elapsed);
+                    document.getElementById('elapsed-timer').textContent = formatTimer(elapsed);
                 }
             }, 1000);
         }
 
-        function formatTime(seconds) {
-            if (seconds < 60) return `${seconds}s`;
+        function formatTimer(seconds) {
             const mins = Math.floor(seconds / 60);
             const secs = seconds % 60;
-            return `${mins}m ${secs}s`;
-        }
-
-        function formatEta(ms) {
-            if (!ms || ms <= 0) return '';
-            const seconds = Math.round(ms / 1000);
-            if (seconds < 60) return `~${seconds}s`;
-            const mins = Math.floor(seconds / 60);
-            const secs = seconds % 60;
-            return `~${mins}m ${secs}s`;
+            return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
         }
 
         function renderProgress(progress) {
-            // Update header
-            document.getElementById('namespace-display').textContent = progress.namespace ? `Namespace: ${progress.namespace}` : '-';
+            // Update namespace
+            document.getElementById('namespace-badge').textContent = progress.namespace || '-';
 
-            const statusBadge = document.getElementById('status-badge');
+            // Update status indicator
+            const statusIndicator = document.getElementById('status-indicator');
             const statusText = document.getElementById('status-text');
 
             if (progress.completed) {
-                statusBadge.className = 'status-badge complete';
+                statusIndicator.className = 'status-indicator complete';
                 statusText.textContent = 'Complete';
+                if (!completionHandled) {
+                    completionHandled = true;
+                    handleCompletion();
+                }
             } else if (progress.current_phase > 0) {
-                statusBadge.className = 'status-badge running';
-                statusText.textContent = 'Running';
+                statusIndicator.className = 'status-indicator running';
+                statusText.textContent = 'Building';
             } else {
-                statusBadge.className = 'status-badge idle';
+                statusIndicator.className = 'status-indicator idle';
                 statusText.textContent = 'Idle';
             }
 
-            // Update summary
-            document.getElementById('current-phase').textContent = progress.current_phase > 0 ? `Phase ${progress.current_phase}` : '-';
-            document.getElementById('services-count').textContent = progress.services ? progress.services.length : 0;
+            // Update phase steps
+            for (let i = 1; i <= 5; i++) {
+                const step = document.querySelector(`.phase-step[data-phase="${i}"]`);
+                const connector = document.querySelector(`.phase-connector[data-connector="${i}"]`);
 
-            // Count in-progress operations
-            let inProgressCount = 0;
-            for (const [phaseNum, phase] of Object.entries(progress.phases || {})) {
-                for (const [opName, op] of Object.entries(phase.operations || {})) {
-                    if (op.status === 'in_progress') inProgressCount++;
+                if (step) {
+                    step.classList.remove('active', 'complete');
+                    if (progress.current_phase === i && !progress.completed) {
+                        step.classList.add('active');
+                    } else if (progress.current_phase > i || (progress.completed && i <= 5)) {
+                        step.classList.add('complete');
+                    }
+                }
+
+                if (connector) {
+                    connector.classList.remove('complete');
+                    if (progress.current_phase > i || progress.completed) {
+                        connector.classList.add('complete');
+                    }
                 }
             }
-            document.getElementById('in-progress-count').textContent = inProgressCount;
 
-            // Render phases
-            const container = document.getElementById('phases-container');
+            // Update stats
+            document.getElementById('services-count').textContent = progress.services?.length || 0;
+            document.getElementById('current-phase').textContent = progress.current_phase > 0 ? `${progress.current_phase}/5` : '-';
 
-            if (!progress.phases || Object.keys(progress.phases).length === 0) {
-                container.innerHTML = `
-                    <div class="empty-state">
-                        <div class="empty-state-icon">📦</div>
-                        <h2>Waiting for build...</h2>
-                        <p>Start a build with <code>make run -d</code> or <code>make run --dashboard</code></p>
-                    </div>
-                `;
-                return;
+            // Count operations
+            let totalOps = 0;
+            let completedOps = 0;
+            for (const phase of Object.values(progress.phases || {})) {
+                for (const op of Object.values(phase.operations || {})) {
+                    totalOps++;
+                    if (op.status === 'complete') completedOps++;
+                }
             }
-
-            let html = '';
-            for (let i = 1; i <= 5; i++) {
-                const phase = progress.phases[String(i)] || { status: 'pending', operations: {} };
-                const isCollapsed = phase.status === 'complete' && progress.current_phase > i;
-                const phaseClass = `phase-section ${phase.status} ${isCollapsed ? 'collapsed' : ''}`;
-
-                const operations = phase.operations || {};
-                const opCount = Object.keys(operations).length;
-                const completedOps = Object.values(operations).filter(o => o.status === 'complete').length;
-                const inProgressOps = Object.values(operations).filter(o => o.status === 'in_progress').length;
-
-                html += `
-                    <div class="${phaseClass}" id="phase-${i}">
-                        <div class="phase-header" onclick="togglePhase(${i})">
-                            <div class="phase-header-left">
-                                <div class="phase-number"><span>${i}</span></div>
-                                <span class="phase-title">${PHASE_NAMES[String(i)]}</span>
-                            </div>
-                            <div class="phase-header-right">
-                                ${phase.eta_ms > 0 ? `<span class="phase-eta">ETA: ${formatEta(phase.eta_ms)}</span>` : ''}
-                                <span class="phase-status ${phase.status}">${formatStatus(phase.status)}</span>
-                                <span class="collapse-icon">▼</span>
-                            </div>
-                        </div>
-                        <div class="phase-content">
-                            ${opCount > 0 ? `
-                                <div class="operations-matrix">
-                                    ${Object.entries(operations).map(([name, op]) => renderOperation(name, op)).join('')}
-                                </div>
-                                ${inProgressOps > 0 ? `
-                                    <div class="parallelism-info">
-                                        <span>Parallel operations:</span>
-                                        <span class="parallelism-count">${inProgressOps}</span>
-                                        <span style="color: var(--text-muted)">of ${opCount} total</span>
-                                    </div>
-                                ` : ''}
-                            ` : `
-                                <div style="padding: 20px 0; color: var(--text-muted); text-align: center;">
-                                    ${phase.status === 'pending' ? 'Waiting...' : phase.status === 'in_progress' ? 'Processing...' : 'Done'}
-                                </div>
-                            `}
-                        </div>
-                    </div>
-                `;
-            }
-
-            container.innerHTML = html;
-        }
-
-        function renderOperation(name, op) {
-            const progress = op.status === 'complete' ? 100 : op.status === 'in_progress' ? 50 : 0;
-            const statusIcon = {
-                'pending': '○',
-                'in_progress': '◐',
-                'complete': '✓',
-                'failed': '✗'
-            }[op.status] || '○';
-
-            return `
-                <div class="operation-card ${op.status}">
-                    <div class="operation-header">
-                        <span class="operation-name">${name}</span>
-                        <div class="operation-status-icon ${op.status}">${statusIcon}</div>
-                    </div>
-                    <div class="operation-progress">
-                        <div class="operation-progress-fill" style="width: ${progress}%"></div>
-                    </div>
-                    <div class="operation-eta">
-                        <span>${op.status === 'in_progress' ? 'In progress...' : op.status === 'complete' ? 'Done' : op.status === 'failed' ? 'Failed' : 'Pending'}</span>
-                        ${op.eta_ms > 0 ? `<span>${formatEta(op.eta_ms)}</span>` : ''}
-                    </div>
-                </div>
-            `;
-        }
-
-        function formatStatus(status) {
-            return {
-                'pending': 'Pending',
-                'in_progress': 'Running',
-                'complete': 'Complete'
-            }[status] || status;
-        }
-
-        function togglePhase(num) {
-            const section = document.getElementById(`phase-${num}`);
-            if (section) {
-                section.classList.toggle('collapsed');
-            }
-        }
-
-        function toggleLogs() {
-            const section = document.getElementById('logs-section');
-            section.classList.toggle('expanded');
+            document.getElementById('operations-count').textContent = `${completedOps}/${totalOps}`;
         }
 
         function addLog(message) {
             const trimmed = message.trim();
             if (!trimmed) return;
 
-            logs.push(trimmed);
-            if (logs.length > 500) {
-                logs = logs.slice(-500);
+            // Hide empty state
+            document.getElementById('empty-state').style.display = 'none';
+
+            logs.push({
+                time: new Date(),
+                message: trimmed
+            });
+
+            if (logs.length > 1000) {
+                logs = logs.slice(-1000);
             }
 
-            const container = document.getElementById('logs-container');
-            const isError = trimmed.toLowerCase().includes('error') || trimmed.toLowerCase().includes('failed');
-            const isSuccess = trimmed.includes('✓') || trimmed.toLowerCase().includes('success');
+            renderLogs();
+        }
 
-            const className = isError ? 'error' : isSuccess ? 'success' : '';
+        function renderLogs() {
+            const container = document.getElementById('log-content');
+            const emptyState = document.getElementById('empty-state');
 
-            container.innerHTML = logs.slice(-100).map(line => {
-                const cls = line.toLowerCase().includes('error') || line.toLowerCase().includes('failed') ? 'error' :
-                           line.includes('✓') || line.toLowerCase().includes('success') ? 'success' : '';
-                return `<div class="log-line ${cls}">${escapeHtml(line)}</div>`;
+            if (logs.length === 0) {
+                emptyState.style.display = 'flex';
+                return;
+            }
+
+            emptyState.style.display = 'none';
+
+            const html = logs.map(log => {
+                const timeStr = log.time.toLocaleTimeString('en-US', { hour12: false });
+                const msg = log.message;
+
+                let className = '';
+                if (msg.toLowerCase().includes('error') || msg.toLowerCase().includes('failed') || msg.includes('✗')) {
+                    className = 'error';
+                } else if (msg.includes('✓') || msg.toLowerCase().includes('success') || msg.toLowerCase().includes('complete')) {
+                    className = 'success';
+                } else if (msg.toLowerCase().includes('warning')) {
+                    className = 'warning';
+                } else if (msg.includes('Phase') || msg.includes('===') || msg.includes('---')) {
+                    className = 'phase';
+                } else if (msg.includes('Starting') || msg.includes('Building') || msg.includes('Cloning')) {
+                    className = 'info';
+                }
+
+                return `<div class="log-line ${className}">
+                    <span class="log-time">${timeStr}</span>
+                    <span class="log-message">${escapeHtml(msg)}</span>
+                </div>`;
             }).join('');
 
-            container.scrollTop = container.scrollHeight;
+            container.innerHTML = html + '<span class="cursor"></span>';
+            document.getElementById('log-count').textContent = `${logs.length} lines`;
+
+            if (autoScroll) {
+                container.scrollTop = container.scrollHeight;
+            }
+        }
+
+        function clearLogs() {
+            logs = [];
+            const container = document.getElementById('log-content');
+            container.innerHTML = `
+                <div class="empty-state" id="empty-state">
+                    <div class="empty-icon">📋</div>
+                    <div class="empty-text">Logs cleared</div>
+                    <div class="empty-hint">New logs will appear here</div>
+                </div>
+            `;
+            document.getElementById('log-count').textContent = '0 lines';
+        }
+
+        function toggleAutoScroll() {
+            autoScroll = !autoScroll;
+            document.getElementById('autoscroll-btn').textContent = `Auto-scroll: ${autoScroll ? 'ON' : 'OFF'}`;
         }
 
         function escapeHtml(text) {
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
+        }
+
+        // Completion handling
+        function handleCompletion() {
+            isComplete = true;
+            shutdownSeconds = 60;
+            showCompletionOverlay();
+            startShutdownTimer();
+        }
+
+        function showCompletionOverlay() {
+            document.getElementById('completion-overlay').classList.add('visible');
+        }
+
+        function hideCompletionOverlay() {
+            document.getElementById('completion-overlay').classList.remove('visible');
+            if (shutdownTimer) {
+                clearInterval(shutdownTimer);
+                shutdownTimer = null;
+            }
+        }
+
+        function startShutdownTimer() {
+            updateShutdownDisplay();
+            shutdownTimer = setInterval(() => {
+                shutdownSeconds--;
+                updateShutdownDisplay();
+
+                if (shutdownSeconds <= 0) {
+                    clearInterval(shutdownTimer);
+                    triggerShutdown();
+                }
+            }, 1000);
+        }
+
+        function updateShutdownDisplay() {
+            document.getElementById('shutdown-timer').textContent = shutdownSeconds;
+        }
+
+        function cancelShutdown() {
+            hideCompletionOverlay();
+        }
+
+        function closeNow() {
+            triggerShutdown();
+        }
+
+        function triggerShutdown() {
+            // Request server shutdown
+            fetch('/api/shutdown', { method: 'POST' })
+                .then(() => {
+                    document.body.innerHTML = `
+                        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; background: var(--bg-primary); color: var(--text-secondary);">
+                            <div style="font-size: 3rem; margin-bottom: 16px;">👋</div>
+                            <div style="font-size: 1.2rem; color: var(--text-primary);">Dashboard Closed</div>
+                            <div style="margin-top: 8px;">You can close this tab now</div>
+                        </div>
+                    `;
+                })
+                .catch(() => {
+                    // Even if shutdown fails, show the message
+                    document.body.innerHTML = `
+                        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; background: #0a0e14; color: #8b949e; font-family: monospace;">
+                            <div style="font-size: 3rem; margin-bottom: 16px;">👋</div>
+                            <div style="font-size: 1.2rem; color: #e6edf3;">Dashboard Closed</div>
+                            <div style="margin-top: 8px;">You can close this tab now</div>
+                        </div>
+                    `;
+                });
         }
 
         // Start
