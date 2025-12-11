@@ -49,6 +49,43 @@ DASHBOARD="false"
 # Utility Functions
 # ============================================
 
+# Cross-platform timeout function (works on macOS without GNU coreutils)
+run_with_timeout() {
+    local timeout_seconds=$1
+    shift
+    local cmd="$@"
+
+    # Try GNU timeout first (Linux, or macOS with coreutils installed)
+    if command -v timeout &>/dev/null; then
+        timeout "$timeout_seconds" $cmd
+        return $?
+    fi
+
+    # Try gtimeout (macOS with coreutils via brew)
+    if command -v gtimeout &>/dev/null; then
+        gtimeout "$timeout_seconds" $cmd
+        return $?
+    fi
+
+    # Fallback: use background process with kill (works on any POSIX system)
+    $cmd &
+    local pid=$!
+    local count=0
+    while [ $count -lt $timeout_seconds ]; do
+        if ! kill -0 $pid 2>/dev/null; then
+            # Process finished
+            wait $pid
+            return $?
+        fi
+        sleep 1
+        count=$((count + 1))
+    done
+    # Timeout reached, kill the process
+    kill -9 $pid 2>/dev/null
+    wait $pid 2>/dev/null
+    return 124  # Same exit code as GNU timeout
+}
+
 is_valid_namespace() {
     local ns=$1
     for valid in $VALID_NAMESPACES; do
@@ -93,7 +130,7 @@ docker_compose() {
     # Cache the docker compose command detection on first use
     if [ -z "$DOCKER_COMPOSE_CMD" ]; then
         # Use timeout to avoid hanging if Docker daemon is unresponsive
-        if command -v docker &>/dev/null && timeout 5 docker compose version &>/dev/null 2>&1; then
+        if command -v docker &>/dev/null && run_with_timeout 5 docker compose version &>/dev/null 2>&1; then
             DOCKER_COMPOSE_CMD="docker compose"
         elif command -v docker-compose &>/dev/null; then
             DOCKER_COMPOSE_CMD="docker-compose"
@@ -1678,9 +1715,47 @@ do_run() {
     export COMPOSE_BAKE=true
 
     # Verify Docker is responsive before starting parallel builds
+    # Use retry logic since Docker can be slow to respond, especially on macOS
     echo -ne "  ${DIM}Checking Docker availability...${NC}"
-    if ! timeout 10 docker info &>/dev/null; then
-        echo -e "\r  ${RED}✗${NC} Docker is not responding. Please ensure Docker Desktop is running."
+    local docker_ready=false
+    local docker_attempts=0
+    local docker_max_attempts=5
+
+    while [ $docker_attempts -lt $docker_max_attempts ]; do
+        docker_attempts=$((docker_attempts + 1))
+
+        # First check if docker command exists
+        if ! command -v docker &>/dev/null; then
+            echo -e "\r  ${RED}✗${NC} Docker command not found. Please install Docker."
+            return 1
+        fi
+
+        # Try docker info with a generous timeout (30s per attempt)
+        if run_with_timeout 30 docker info &>/dev/null 2>&1; then
+            docker_ready=true
+            break
+        fi
+
+        # Show retry status
+        if [ $docker_attempts -lt $docker_max_attempts ]; then
+            echo -ne "\r  ${DIM}Checking Docker availability... (attempt $docker_attempts/$docker_max_attempts)${NC}"
+            sleep 2
+        fi
+    done
+
+    if [ "$docker_ready" = false ]; then
+        echo -e "\r  ${RED}✗${NC} Docker is not responding after $docker_max_attempts attempts."
+        echo -e "    ${DIM}Please ensure Docker Desktop is running and fully started.${NC}"
+        echo -e "    ${DIM}Diagnostics:${NC}"
+        # Show what's happening with docker
+        echo -ne "    ${DIM}Docker socket: ${NC}"
+        if [ -S /var/run/docker.sock ]; then
+            echo -e "${GREEN}exists${NC}"
+        elif [ -S "$HOME/.docker/run/docker.sock" ]; then
+            echo -e "${GREEN}exists (user socket)${NC}"
+        else
+            echo -e "${RED}not found${NC}"
+        fi
         echo -e "    ${DIM}Try: 'docker info' to diagnose${NC}"
         return 1
     fi
