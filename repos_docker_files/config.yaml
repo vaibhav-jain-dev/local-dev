@@ -41,11 +41,14 @@ services:
       - source: configs/oauth-client.json
         dest: config/oauth-client.json
         required: true
-    # Workers - share same repo, different Dockerfiles
+    # Workers - share same repo, each has its own Dockerfile
     workers:
-      - oms-worker
-      - oms-worker-scheduler
-      - oms-consumer-worker
+      oms-worker:
+        dockerfile: oms-worker.dev.Dockerfile
+      oms-worker-scheduler:
+        dockerfile: oms-worker-scheduler.dev.Dockerfile
+      oms-consumer-worker:
+        dockerfile: oms-consumer-worker.dev.Dockerfile
 
   # Frontend Services
   bifrost:

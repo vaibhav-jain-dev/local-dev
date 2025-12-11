@@ -616,6 +616,7 @@ setup_emulator() {
 setup_worker() {
     local worker=$1
     local parent=$2
+    local dockerfile=$3
 
     # Get parent repo info
     local parent_repo=$(yq eval ".services.\"${parent}\".git_repo" $CONFIG_FILE 2>/dev/null)
@@ -633,11 +634,11 @@ setup_worker() {
     fi
     echo -e "    ├─ parent repo exists ${GREEN}✓${NC}"
 
-    # Copy worker Dockerfile
-    local dockerfile_path=$(get_dockerfile_path "$worker")
+    # Copy worker Dockerfile from repos_docker_files
+    local dockerfile_path="repos_docker_files/${dockerfile}"
     if [ -f "$dockerfile_path" ]; then
-        cp "$dockerfile_path" "cloned/$dir_name/${worker}.dev.Dockerfile"
-        echo -e "    └─ dockerfile ready ${GREEN}✓${NC}"
+        cp "$dockerfile_path" "cloned/$dir_name/${dockerfile}"
+        echo -e "    └─ dockerfile ready: $dockerfile ${GREEN}✓${NC}"
     else
         echo -e "    └─ ${RED}✗ no Dockerfile at $dockerfile_path${NC}"
         end_operation "setup:$worker"
@@ -762,16 +763,17 @@ COMPOSE
 COMPOSE
     done
 
-    # Add workers to docker-compose (format: "worker:parent")
+    # Add workers to docker-compose (format: "worker:parent:dockerfile")
     for worker_entry in $workers_to_include; do
         local worker=$(echo "$worker_entry" | cut -d: -f1)
         local parent=$(echo "$worker_entry" | cut -d: -f2)
+        local dockerfile=$(echo "$worker_entry" | cut -d: -f3)
         local parent_repo=$(yq eval ".services.\"${parent}\".git_repo" $CONFIG_FILE 2>/dev/null)
         local dir_name=$(basename "$parent_repo" .git)
 
         # Check for missing dockerfile
-        if [ ! -f "cloned/$dir_name/${worker}.dev.Dockerfile" ]; then
-            echo -e "  ${YELLOW}⚠ Skipping $worker: cloned/$dir_name/${worker}.dev.Dockerfile not found${NC}"
+        if [ ! -f "cloned/$dir_name/${dockerfile}" ]; then
+            echo -e "  ${YELLOW}⚠ Skipping $worker: cloned/$dir_name/${dockerfile} not found${NC}"
             continue
         fi
 
@@ -780,7 +782,7 @@ COMPOSE
   ${worker}:
     build:
       context: ./cloned/${dir_name}
-      dockerfile: ${worker}.dev.Dockerfile
+      dockerfile: ${dockerfile}
     container_name: ${worker}
     volumes:
       - ./cloned/${dir_name}:/go/src/github.com/Orange-Health/oms
@@ -980,16 +982,16 @@ do_run() {
 
     services_to_run=$(echo $services_to_run | xargs)  # trim whitespace
 
-    # Determine workers to run (workers defined under each service's workers array)
-    # Format: "worker:parent" to track which service owns the worker
+    # Determine workers to run (workers defined under each service's workers map)
+    # Format: "worker:parent:dockerfile" to track which service owns the worker and its dockerfile
     local workers_to_run=""
     for service in $services_to_run; do
-        local workers_count=$(yq eval ".services.\"${service}\".workers | length" $CONFIG_FILE 2>/dev/null || echo 0)
-        if [ "$workers_count" != "null" ] && [ "$workers_count" -gt 0 ]; then
-            for i in $(seq 0 $((workers_count - 1))); do
-                local worker=$(yq eval ".services.\"${service}\".workers[$i]" $CONFIG_FILE 2>/dev/null)
+        local workers_keys=$(yq eval ".services.\"${service}\".workers | keys | .[]" $CONFIG_FILE 2>/dev/null)
+        if [ -n "$workers_keys" ] && [ "$workers_keys" != "null" ]; then
+            for worker in $workers_keys; do
+                local dockerfile=$(yq eval ".services.\"${service}\".workers.\"${worker}\".dockerfile" $CONFIG_FILE 2>/dev/null)
                 if [ -n "$worker" ] && [ "$worker" != "null" ]; then
-                    workers_to_run="$workers_to_run ${worker}:${service}"
+                    workers_to_run="$workers_to_run ${worker}:${service}:${dockerfile}"
                 fi
             done
         fi
@@ -1124,13 +1126,14 @@ do_run() {
     done
 
     # Setup workers (after services, as they depend on parent repos)
-    # Format: "worker:parent"
+    # Format: "worker:parent:dockerfile"
     if [ -n "$workers_to_run" ]; then
         echo -e "  ${DIM}Setting up $worker_count workers...${NC}"
         for worker_entry in $workers_to_run; do
             local worker=$(echo "$worker_entry" | cut -d: -f1)
             local parent=$(echo "$worker_entry" | cut -d: -f2)
-            if setup_worker "$worker" "$parent" > "${parallel_tmp}/${worker}.log" 2>&1; then
+            local dockerfile=$(echo "$worker_entry" | cut -d: -f3)
+            if setup_worker "$worker" "$parent" "$dockerfile" > "${parallel_tmp}/${worker}.log" 2>&1; then
                 workers_ready="$workers_ready $worker_entry"
             else
                 failed_services="$failed_services $worker"
