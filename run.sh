@@ -122,6 +122,44 @@ is_port_busy() {
     lsof -Pi :${port} -sTCP:LISTEN -t >/dev/null 2>&1
 }
 
+# Helper to get service config from new structure (services or clients.web)
+get_service_config_path() {
+    local service=$1
+    local field=$2
+
+    # Try services first
+    local value=$(yq -r ".services.\"${service}\".${field}" $CONFIG_FILE 2>/dev/null)
+    if [ "$value" != "null" ] && [ -n "$value" ]; then
+        echo "$value"
+        return 0
+    fi
+
+    # Try clients.web
+    value=$(yq -r ".clients.web.\"${service}\".${field}" $CONFIG_FILE 2>/dev/null)
+    if [ "$value" != "null" ] && [ -n "$value" ]; then
+        echo "$value"
+        return 0
+    fi
+
+    # Try clients.android (emulators)
+    value=$(yq -r ".clients.android.\"${service}\".${field}" $CONFIG_FILE 2>/dev/null)
+    if [ "$value" != "null" ] && [ -n "$value" ]; then
+        echo "$value"
+        return 0
+    fi
+
+    # Return null if not found
+    echo "null"
+    return 1
+}
+
+# Check if service is a web client
+is_web_client() {
+    local service=$1
+    local value=$(yq -r ".clients.web.\"${service}\"" $CONFIG_FILE 2>/dev/null)
+    [ "$value" != "null" ] && [ -n "$value" ]
+}
+
 # Docker Compose command helper (uses v2 if available, fallback to v1)
 # Cache the compose command to avoid repeated slow checks
 DOCKER_COMPOSE_CMD=""
@@ -789,9 +827,9 @@ stop_local_redis() {
 
 setup_repository() {
     local service=$1
-    local repo=$(yq -r ".services.\"${service}\".git_repo" $CONFIG_FILE 2>/dev/null)
-    local branch=$(yq -r ".services.\"${service}\".git_branch" $CONFIG_FILE 2>/dev/null)
-    local always_refresh=$(yq -r ".services.\"${service}\".always-refresh" $CONFIG_FILE 2>/dev/null)
+    local repo=$(get_service_config_path "$service" "git_repo")
+    local branch=$(get_service_config_path "$service" "git_branch")
+    local always_refresh=$(get_service_config_path "$service" "always-refresh")
 
     # Handle yq returning "null" for missing values
     [ "$repo" = "null" ] || [ -z "$repo" ] && { echo -e "    ${RED}✗ No git_repo configured for $service${NC}"; return 1; }
@@ -933,13 +971,22 @@ setup_repository() {
 
     # Copy configs from namespace folder
     local config_folder=$(get_config_folder)
-    local configs_count=$(yq -r ".services.\"${service}\".configs | length" $CONFIG_FILE 2>/dev/null || echo 0)
+    # Check both services and clients.web for configs
+    local configs_count=0
+    local config_base_path=""
+    if yq -r ".services.\"${service}\".configs" $CONFIG_FILE 2>/dev/null | grep -qv "null"; then
+        config_base_path=".services.\"${service}\""
+        configs_count=$(yq -r ".services.\"${service}\".configs | length" $CONFIG_FILE 2>/dev/null || echo 0)
+    elif yq -r ".clients.web.\"${service}\".configs" $CONFIG_FILE 2>/dev/null | grep -qv "null"; then
+        config_base_path=".clients.web.\"${service}\""
+        configs_count=$(yq -r ".clients.web.\"${service}\".configs | length" $CONFIG_FILE 2>/dev/null || echo 0)
+    fi
     local configs_copied=0
 
     for i in $(seq 0 $((configs_count - 1))); do
-        local source=$(yq -r ".services.\"${service}\".configs[$i].source" $CONFIG_FILE 2>/dev/null)
-        local dest=$(yq -r ".services.\"${service}\".configs[$i].dest" $CONFIG_FILE 2>/dev/null)
-        local required=$(yq -r ".services.\"${service}\".configs[$i].required" $CONFIG_FILE 2>/dev/null)
+        local source=$(yq -r "${config_base_path}.configs[$i].source" $CONFIG_FILE 2>/dev/null)
+        local dest=$(yq -r "${config_base_path}.configs[$i].dest" $CONFIG_FILE 2>/dev/null)
+        local required=$(yq -r "${config_base_path}.configs[$i].required" $CONFIG_FILE 2>/dev/null)
 
         if [ -n "$source" ] && [ -n "$dest" ]; then
             local source_path="${source/configs\//$config_folder/}"
@@ -972,9 +1019,9 @@ setup_repository() {
 # Setup emulator app (clone and prepare for script execution)
 setup_emulator() {
     local emulator=$1
-    local repo=$(yq -r ".emulators.\"${emulator}\".git_repo" $CONFIG_FILE 2>/dev/null)
-    local branch=$(yq -r ".emulators.\"${emulator}\".git_branch" $CONFIG_FILE 2>/dev/null)
-    local script=$(yq -r ".emulators.\"${emulator}\".script" $CONFIG_FILE 2>/dev/null)
+    local repo=$(yq -r ".clients.android.\"${emulator}\".git_repo" $CONFIG_FILE 2>/dev/null)
+    local branch=$(yq -r ".clients.android.\"${emulator}\".git_branch" $CONFIG_FILE 2>/dev/null)
+    local script=$(yq -r ".clients.android.\"${emulator}\".script" $CONFIG_FILE 2>/dev/null)
 
     [ "$repo" = "null" ] || [ -z "$repo" ] && { echo -e "    ${RED}✗ No git_repo configured for $emulator${NC}"; return 1; }
     [ "$branch" = "null" ] && branch="main"
