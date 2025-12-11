@@ -741,6 +741,8 @@ COMPOSE
     build:
       context: ./cloned/${dir_name}
       dockerfile: dev.Dockerfile
+      args:
+        GITHUB_TOKEN: \${GITHUB_TOKEN:-}
     container_name: ${service}
     ports: ["${port}:${port}"]
     volumes:
@@ -1177,11 +1179,16 @@ do_run() {
 
     # Check if any frontend service needs GITHUB_NPM_TOKEN
     local has_frontend_service=false
+    local has_python_service=false
     for service in $services_to_include; do
         local service_type=$(yq eval ".services.\"${service}\".type" $CONFIG_FILE 2>/dev/null)
         if [ "$service_type" = "nextjs" ] || [ "$service_type" = "nodejs" ]; then
             has_frontend_service=true
-            break
+        elif [ "$service_type" = "null" ] || [ -z "$service_type" ]; then
+            # Default type (Python/Django)
+            if [[ "$service" != "oms-api" ]]; then
+                has_python_service=true
+            fi
         fi
     done
 
@@ -1201,6 +1208,17 @@ do_run() {
             echo -e "  ${GREEN}✓${NC} GITHUB_NPM_TOKEN is set"
             # Export for docker-compose to access
             export GITHUB_NPM_TOKEN
+        fi
+    fi
+
+    # Warn if GITHUB_TOKEN is missing for Python services (needed for error_framework)
+    if [ "$has_python_service" = true ]; then
+        if [ -z "${GITHUB_TOKEN:-}" ]; then
+            echo -e "  ${YELLOW}⚠${NC} GITHUB_TOKEN not set - error_framework may not install"
+            echo -e "    ${DIM}To fix: export GITHUB_TOKEN=\"ghp_your_token_here\"${NC}"
+        else
+            echo -e "  ${GREEN}✓${NC} GITHUB_TOKEN is set"
+            export GITHUB_TOKEN
         fi
     fi
 
