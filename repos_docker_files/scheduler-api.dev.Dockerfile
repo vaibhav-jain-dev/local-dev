@@ -20,6 +20,7 @@ RUN sed -i 's|http://deb.debian.org/debian|http://archive.debian.org/debian|g' /
     libpcre3-dev \
     python3-dev \
     s4cmd \
+    git \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -30,10 +31,14 @@ RUN grep -v -E "^PyYAML==|^wrapt==" /requirements/dev.txt > /requirements/dev_fi
     pip install -r /requirements/dev_fixed.txt
 
 # Install error_framework from Orange Health private GitHub repo
-# This is required by common/v1/scheduler_api_error_manager.py
-RUN pip install git+https://github.com/Orange-Health/error-framework.git@master || \
-    pip install git+https://github.com/Orange-Health/error_framework.git@master || \
-    echo "Warning: error_framework not installed - may need manual installation"
+# Requires GITHUB_TOKEN build arg for authentication
+ARG GITHUB_TOKEN
+RUN if [ -n "$GITHUB_TOKEN" ]; then \
+        pip install git+https://${GITHUB_TOKEN}@github.com/Orange-Health/error-framework.git@master || \
+        pip install git+https://${GITHUB_TOKEN}@github.com/Orange-Health/error_framework.git@master; \
+    else \
+        echo "Warning: GITHUB_TOKEN not set - error_framework not installed"; \
+    fi
 
 RUN mkdir /app
 WORKDIR /app
