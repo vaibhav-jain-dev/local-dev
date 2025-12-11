@@ -9,6 +9,7 @@ help:
 	@echo "Commands:"
 	@echo "  make run [namespace] [services...]    - Start services (default: s1)"
 	@echo "  make run refresh [namespace] [...]    - Start with fresh pull from git"
+	@echo "  make run --include-app [namespace]    - Start with Android emulators"
 	@echo "  make restart [namespace]              - Restart all (force redis reconnect)"
 	@echo "  make restart refresh [namespace]      - Restart with fresh pull"
 	@echo "  make stop                             - Stop all services"
@@ -18,12 +19,21 @@ help:
 	@echo ""
 	@echo "Valid namespaces: s1, s2, s3, s4, s5, qa, auto"
 	@echo ""
+	@echo "Flags:"
+	@echo "  refresh        - Pull latest code from git before starting"
+	@echo "  --include-app  - Include Android emulator apps (patient-app, doctor-app)"
+	@echo ""
+	@echo "Workers (auto-started with oms-api):"
+	@echo "  oms-worker, oms-worker-scheduler, oms-consumer-worker"
+	@echo ""
 	@echo "Examples:"
 	@echo "  make run                              - Start all with s1 (default)"
 	@echo "  make run s2                           - Start all with s2 namespace"
 	@echo "  make run s1 health-api                - Start only health-api"
+	@echo "  make run s1 oms-api                   - Start oms-api with all workers"
 	@echo "  make run refresh s2                   - Start all, pull latest code"
 	@echo "  make run refresh s1 health-api        - Pull and start health-api"
+	@echo "  make run --include-app s1             - Start all with Android emulators"
 	@echo "  make restart                          - Restart all"
 	@echo "  make restart refresh                  - Restart with fresh pull"
 
@@ -46,10 +56,10 @@ stats:
 	@./run.sh --stats $(filter-out $@,$(MAKECMDGOALS))
 
 # Allow any target (namespaces, service names, flags)
-s1 s2 s3 s4 s5 qa auto refresh:
+s1 s2 s3 s4 s5 qa auto refresh --include-app:
 	@:
 
-health-api scheduler-api oms-api oms:
+health-api scheduler-api oms-api oms bifrost oms-web patient-app doctor-app:
 	@:
 
 %:

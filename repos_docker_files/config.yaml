@@ -18,7 +18,7 @@ services:
       - source: configs/health_creds.json
         dest: serviceAccountKey.json
         required: false
-        
+
   scheduler-api:
     enabled: true
     git_repo: git@github.com:Orange-Health/scheduler-api.git
@@ -28,7 +28,7 @@ services:
       - source: configs/scheduler_secrets.py
         dest: app/app/secrets.py
         required: true
-        
+
   oms-api:
     enabled: true
     git_repo: git@github.com:Orange-Health/oms.git
@@ -41,6 +41,14 @@ services:
       - source: configs/oauth-client.json
         dest: config/oauth-client.json
         required: true
+    # Workers - share same repo, each has its own Dockerfile
+    workers:
+      oms-worker:
+        dockerfile: oms-worker.dev.Dockerfile
+      oms-worker-scheduler:
+        dockerfile: oms-worker-scheduler.dev.Dockerfile
+      oms-consumer-worker:
+        dockerfile: oms-consumer-worker.dev.Dockerfile
 
   # Frontend Services
   bifrost:
@@ -64,6 +72,19 @@ services:
       - source: configs/oms-web.config.js
         dest: config/config.js
         required: true
+
+# Emulator Apps - run bash scripts instead of Docker containers
+# These are only included when --include-app flag is passed
+emulators:
+  patient-app:
+    git_repo: git@github.com:Orange-Health/patient-app.git
+    git_branch: copilot/add-dockerized-android-emulator
+    script: run-android-emulator.sh
+
+  doctor-app:
+    git_repo: git@github.com:Orange-Health/doctor-app.git
+    git_branch: copilot/add-dockerized-android-emulator-script
+    script: run-android-emulator.sh
 
 redis:
   namespace: s5
