@@ -62,11 +62,11 @@ get_dockerfile_path() {
 }
 
 get_redis_port() {
-    yq eval '.redis.port' $CONFIG_FILE 2>/dev/null || echo "6379"
+    yq -r '.redis.port' $CONFIG_FILE 2>/dev/null || echo "6379"
 }
 
 get_redis_deployment() {
-    yq eval '.redis.deployment' $CONFIG_FILE 2>/dev/null || echo "redis"
+    yq -r '.redis.deployment' $CONFIG_FILE 2>/dev/null || echo "redis"
 }
 
 is_port_busy() {
@@ -352,9 +352,9 @@ force_kill_redis_port() {
 
 setup_repository() {
     local service=$1
-    local repo=$(yq eval ".services.\"${service}\".git_repo" $CONFIG_FILE 2>/dev/null)
-    local branch=$(yq eval ".services.\"${service}\".git_branch" $CONFIG_FILE 2>/dev/null)
-    local always_refresh=$(yq eval ".services.\"${service}\".always-refresh" $CONFIG_FILE 2>/dev/null)
+    local repo=$(yq -r ".services.\"${service}\".git_repo" $CONFIG_FILE 2>/dev/null)
+    local branch=$(yq -r ".services.\"${service}\".git_branch" $CONFIG_FILE 2>/dev/null)
+    local always_refresh=$(yq -r ".services.\"${service}\".always-refresh" $CONFIG_FILE 2>/dev/null)
 
     # Handle yq returning "null" for missing values
     [ "$repo" = "null" ] || [ -z "$repo" ] && { echo -e "    ${RED}✗ No git_repo configured for $service${NC}"; return 1; }
@@ -496,13 +496,13 @@ setup_repository() {
 
     # Copy configs from namespace folder
     local config_folder=$(get_config_folder)
-    local configs_count=$(yq eval ".services.\"${service}\".configs | length" $CONFIG_FILE 2>/dev/null || echo 0)
+    local configs_count=$(yq -r ".services.\"${service}\".configs | length" $CONFIG_FILE 2>/dev/null || echo 0)
     local configs_copied=0
 
     for i in $(seq 0 $((configs_count - 1))); do
-        local source=$(yq eval ".services.\"${service}\".configs[$i].source" $CONFIG_FILE 2>/dev/null)
-        local dest=$(yq eval ".services.\"${service}\".configs[$i].dest" $CONFIG_FILE 2>/dev/null)
-        local required=$(yq eval ".services.\"${service}\".configs[$i].required" $CONFIG_FILE 2>/dev/null)
+        local source=$(yq -r ".services.\"${service}\".configs[$i].source" $CONFIG_FILE 2>/dev/null)
+        local dest=$(yq -r ".services.\"${service}\".configs[$i].dest" $CONFIG_FILE 2>/dev/null)
+        local required=$(yq -r ".services.\"${service}\".configs[$i].required" $CONFIG_FILE 2>/dev/null)
 
         if [ -n "$source" ] && [ -n "$dest" ]; then
             local source_path="${source/configs\//$config_folder/}"
@@ -535,9 +535,9 @@ setup_repository() {
 # Setup emulator app (clone and prepare for script execution)
 setup_emulator() {
     local emulator=$1
-    local repo=$(yq eval ".emulators.\"${emulator}\".git_repo" $CONFIG_FILE 2>/dev/null)
-    local branch=$(yq eval ".emulators.\"${emulator}\".git_branch" $CONFIG_FILE 2>/dev/null)
-    local script=$(yq eval ".emulators.\"${emulator}\".script" $CONFIG_FILE 2>/dev/null)
+    local repo=$(yq -r ".emulators.\"${emulator}\".git_repo" $CONFIG_FILE 2>/dev/null)
+    local branch=$(yq -r ".emulators.\"${emulator}\".git_branch" $CONFIG_FILE 2>/dev/null)
+    local script=$(yq -r ".emulators.\"${emulator}\".script" $CONFIG_FILE 2>/dev/null)
 
     [ "$repo" = "null" ] || [ -z "$repo" ] && { echo -e "    ${RED}✗ No git_repo configured for $emulator${NC}"; return 1; }
     [ "$branch" = "null" ] && branch="main"
@@ -619,7 +619,7 @@ setup_worker() {
     local dockerfile=$3
 
     # Get parent repo info
-    local parent_repo=$(yq eval ".services.\"${parent}\".git_repo" $CONFIG_FILE 2>/dev/null)
+    local parent_repo=$(yq -r ".services.\"${parent}\".git_repo" $CONFIG_FILE 2>/dev/null)
     local dir_name=$(basename "$parent_repo" .git)
 
     start_operation "setup:$worker"
@@ -663,9 +663,9 @@ services:
 COMPOSE
 
     for service in $services_to_include; do
-        local repo=$(yq eval ".services.\"${service}\".git_repo" $CONFIG_FILE 2>/dev/null)
-        local port=$(yq eval ".services.\"${service}\".port" $CONFIG_FILE 2>/dev/null)
-        local service_type=$(yq eval ".services.\"${service}\".type" $CONFIG_FILE 2>/dev/null)
+        local repo=$(yq -r ".services.\"${service}\".git_repo" $CONFIG_FILE 2>/dev/null)
+        local port=$(yq -r ".services.\"${service}\".port" $CONFIG_FILE 2>/dev/null)
+        local service_type=$(yq -r ".services.\"${service}\".type" $CONFIG_FILE 2>/dev/null)
         local dir_name=$(basename "$repo" .git)
 
         # Check for missing directory or dockerfile with clear error messages
@@ -770,7 +770,7 @@ COMPOSE
         local worker=$(echo "$worker_entry" | cut -d: -f1)
         local parent=$(echo "$worker_entry" | cut -d: -f2)
         local dockerfile=$(echo "$worker_entry" | cut -d: -f3)
-        local parent_repo=$(yq eval ".services.\"${parent}\".git_repo" $CONFIG_FILE 2>/dev/null)
+        local parent_repo=$(yq -r ".services.\"${parent}\".git_repo" $CONFIG_FILE 2>/dev/null)
         local dir_name=$(basename "$parent_repo" .git)
 
         # Check for missing dockerfile
@@ -810,8 +810,8 @@ COMPOSE
 cache_containers() {
     mkdir -p "$LOG_DIR"
     > "$CACHE_FILE"
-    for service in $(yq eval '.services | keys | .[]' $CONFIG_FILE 2>/dev/null); do
-        if [ "$(yq eval ".services.\"${service}\".enabled" $CONFIG_FILE 2>/dev/null)" = "true" ]; then
+    for service in $(yq -r '.services | keys | .[]' $CONFIG_FILE 2>/dev/null); do
+        if [ "$(yq -r ".services.\"${service}\".enabled" $CONFIG_FILE 2>/dev/null)" = "true" ]; then
             echo "$service:$service" >> "$CACHE_FILE"
         fi
     done
@@ -963,9 +963,9 @@ do_run() {
     if [ -n "$SERVICES" ]; then
         # Validate each service exists in config (check services or emulators)
         for svc in $SERVICES; do
-            if yq eval ".services.\"${svc}\"" $CONFIG_FILE 2>/dev/null | grep -qv "null"; then
+            if yq -r ".services.\"${svc}\"" $CONFIG_FILE 2>/dev/null | grep -qv "null"; then
                 services_to_run="$services_to_run $svc"
-            elif yq eval ".emulators.\"${svc}\"" $CONFIG_FILE 2>/dev/null | grep -qv "null"; then
+            elif yq -r ".emulators.\"${svc}\"" $CONFIG_FILE 2>/dev/null | grep -qv "null"; then
                 # Emulator specified directly - will be handled below
                 services_to_run="$services_to_run $svc"
             else
@@ -975,8 +975,8 @@ do_run() {
         done
     else
         # Get all enabled services
-        for svc in $(yq eval '.services | keys | .[]' $CONFIG_FILE 2>/dev/null); do
-            if [ "$(yq eval ".services.\"${svc}\".enabled" $CONFIG_FILE 2>/dev/null)" = "true" ]; then
+        for svc in $(yq -r '.services | keys | .[]' $CONFIG_FILE 2>/dev/null); do
+            if [ "$(yq -r ".services.\"${svc}\".enabled" $CONFIG_FILE 2>/dev/null)" = "true" ]; then
                 services_to_run="$services_to_run $svc"
             fi
         done
@@ -988,10 +988,10 @@ do_run() {
     # Format: "worker:parent:dockerfile" to track which service owns the worker and its dockerfile
     local workers_to_run=""
     for service in $services_to_run; do
-        local workers_keys=$(yq eval ".services.\"${service}\".workers | keys | .[]" $CONFIG_FILE 2>/dev/null)
+        local workers_keys=$(yq -r ".services.\"${service}\".workers | keys | .[]" $CONFIG_FILE 2>/dev/null)
         if [ -n "$workers_keys" ] && [ "$workers_keys" != "null" ]; then
             for worker in $workers_keys; do
-                local dockerfile=$(yq eval ".services.\"${service}\".workers.\"${worker}\".dockerfile" $CONFIG_FILE 2>/dev/null)
+                local dockerfile=$(yq -r ".services.\"${service}\".workers.\"${worker}\".dockerfile" $CONFIG_FILE 2>/dev/null)
                 if [ -n "$worker" ] && [ "$worker" != "null" ]; then
                     workers_to_run="$workers_to_run ${worker}:${service}:${dockerfile}"
                 fi
@@ -1003,14 +1003,14 @@ do_run() {
     # Determine emulators to run (only if --include-app flag is passed)
     local emulators_to_run=""
     if [ "$INCLUDE_APP" = "true" ]; then
-        for emu in $(yq eval '.emulators | keys | .[]' $CONFIG_FILE 2>/dev/null); do
+        for emu in $(yq -r '.emulators | keys | .[]' $CONFIG_FILE 2>/dev/null); do
             emulators_to_run="$emulators_to_run $emu"
             # Remove emulator from services_to_run if it was explicitly requested
             services_to_run=$(echo "$services_to_run" | sed "s/\b$emu\b//g" | xargs)
         done
     else
         # Check if any emulator was explicitly requested
-        for emu in $(yq eval '.emulators | keys | .[]' $CONFIG_FILE 2>/dev/null); do
+        for emu in $(yq -r '.emulators | keys | .[]' $CONFIG_FILE 2>/dev/null); do
             if echo "$services_to_run" | grep -qw "$emu"; then
                 emulators_to_run="$emulators_to_run $emu"
                 services_to_run=$(echo "$services_to_run" | sed "s/\b$emu\b//g" | xargs)
@@ -1181,7 +1181,7 @@ do_run() {
     local has_frontend_service=false
     local has_python_service=false
     for service in $services_to_include; do
-        local service_type=$(yq eval ".services.\"${service}\".type" $CONFIG_FILE 2>/dev/null)
+        local service_type=$(yq -r ".services.\"${service}\".type" $CONFIG_FILE 2>/dev/null)
         if [ "$service_type" = "nextjs" ] || [ "$service_type" = "nodejs" ]; then
             has_frontend_service=true
         elif [ "$service_type" = "null" ] || [ -z "$service_type" ]; then
@@ -1298,8 +1298,8 @@ do_run() {
         start_phase "Phase 5: Starting Android Emulators"
 
         for emulator in $emulators_ready; do
-            local repo=$(yq eval ".emulators.\"${emulator}\".git_repo" $CONFIG_FILE 2>/dev/null)
-            local script=$(yq eval ".emulators.\"${emulator}\".script" $CONFIG_FILE 2>/dev/null)
+            local repo=$(yq -r ".emulators.\"${emulator}\".git_repo" $CONFIG_FILE 2>/dev/null)
+            local script=$(yq -r ".emulators.\"${emulator}\".script" $CONFIG_FILE 2>/dev/null)
             local dir_name=$(basename "$repo" .git)
 
             echo -e "  ${MAGENTA}▶${NC} Starting $emulator..."
@@ -1330,7 +1330,7 @@ do_run() {
 
     # Show services status
     for service in $services_ready; do
-        local port=$(yq eval ".services.\"${service}\".port" $CONFIG_FILE 2>/dev/null)
+        local port=$(yq -r ".services.\"${service}\".port" $CONFIG_FILE 2>/dev/null)
 
         if docker ps --format "{{.Names}}" 2>/dev/null | grep -q "^${service}$"; then
             echo -e "${GREEN}✓${NC} ${BOLD}$service${NC}"
