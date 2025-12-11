@@ -3,6 +3,12 @@
 # Don't exit on error - we handle errors explicitly
 set +e
 
+# Cleanup trap for temp files
+cleanup_on_exit() {
+    [ -n "$TIMERS_DIR" ] && [ -d "$TIMERS_DIR" ] && rm -rf "$TIMERS_DIR" 2>/dev/null
+}
+trap cleanup_on_exit EXIT
+
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -184,18 +190,50 @@ get_operation_avg() {
 }
 
 # Start timing for current run
-declare -A PHASE_TIMERS
-declare -A OPERATION_TIMERS
+# Note: Using temp files instead of associative arrays for bash 3.x compatibility
+TIMERS_DIR=""
 RUN_START_MS=0
 CURRENT_RUN_PHASES="{}"
 CURRENT_RUN_OPS="{}"
 
-# Sanitize keys for associative arrays (replace spaces/colons with underscores)
+# Initialize timers directory (for bash 3.x compatibility - no associative arrays)
+init_timers_dir() {
+    TIMERS_DIR=$(mktemp -d)
+    mkdir -p "$TIMERS_DIR/phases" "$TIMERS_DIR/operations"
+    export TIMERS_DIR  # Export for subshells
+}
+
+# Cleanup timers directory
+cleanup_timers_dir() {
+    [ -n "$TIMERS_DIR" ] && [ -d "$TIMERS_DIR" ] && rm -rf "$TIMERS_DIR"
+}
+
+# Sanitize keys (replace spaces/colons with underscores)
 sanitize_key() {
     echo "$1" | tr ' :' '__'
 }
 
+# Store timer value (bash 3.x compatible)
+set_timer() {
+    local type=$1  # "phases" or "operations"
+    local key=$2
+    local value=$3
+    echo "$value" > "$TIMERS_DIR/$type/$key"
+}
+
+# Get timer value (bash 3.x compatible)
+get_timer() {
+    local type=$1  # "phases" or "operations"
+    local key=$2
+    if [ -f "$TIMERS_DIR/$type/$key" ]; then
+        cat "$TIMERS_DIR/$type/$key"
+    else
+        echo "0"
+    fi
+}
+
 start_run_timer() {
+    init_timers_dir
     RUN_START_MS=$(now_ms)
     CURRENT_RUN_PHASES="{}"
     CURRENT_RUN_OPS="{}"
@@ -204,7 +242,7 @@ start_run_timer() {
 start_phase() {
     local phase="$1"
     local key=$(sanitize_key "$phase")
-    PHASE_TIMERS["$key"]=$(now_ms)
+    set_timer "phases" "$key" "$(now_ms)"
     local avg=$(get_phase_avg "$phase")
     local eta=""
     if [ "$avg" -gt 0 ]; then
@@ -216,7 +254,7 @@ start_phase() {
 end_phase() {
     local phase="$1"
     local key=$(sanitize_key "$phase")
-    local start="${PHASE_TIMERS["$key"]}"
+    local start=$(get_timer "phases" "$key")
     local end=$(now_ms)
     local duration=$((end - start))
     CURRENT_RUN_PHASES=$(echo "$CURRENT_RUN_PHASES" | jq --arg p "$phase" --argjson d "$duration" '. + {($p): $d}')
@@ -226,13 +264,13 @@ end_phase() {
 start_operation() {
     local op="$1"
     local key=$(sanitize_key "$op")
-    OPERATION_TIMERS["$key"]=$(now_ms)
+    set_timer "operations" "$key" "$(now_ms)"
 }
 
 end_operation() {
     local op="$1"
     local key=$(sanitize_key "$op")
-    local start="${OPERATION_TIMERS["$key"]}"
+    local start=$(get_timer "operations" "$key")
     local end=$(now_ms)
     local duration=$((end - start))
     CURRENT_RUN_OPS=$(echo "$CURRENT_RUN_OPS" | jq --arg o "$op" --argjson d "$duration" '. + {($o): $d}')
@@ -258,6 +296,9 @@ save_run_metrics() {
             '.runs = (.runs + [$run])[-$max:]' "$METRICS_FILE" > "${METRICS_FILE}.tmp" \
             && mv "${METRICS_FILE}.tmp" "$METRICS_FILE"
     fi
+
+    # Cleanup timers directory
+    cleanup_timers_dir
 }
 
 # Show run summary with comparison to average
