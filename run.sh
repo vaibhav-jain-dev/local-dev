@@ -632,16 +632,21 @@ start_dashboard() {
 
     # Setup virtual environment if needed
     if [ ! -d "$dashboard_dir/venv" ]; then
-        echo -e "  Setting up dashboard environment..."
-        python3 -m venv "$dashboard_dir/venv" 2>/dev/null
+        echo -e "  ${DIM}Setting up dashboard environment...${NC}"
+        if ! python3 -m venv "$dashboard_dir/venv" 2>&1 | grep -v "^$"; then
+            echo -e "  ${YELLOW}⚠${NC} Failed to create virtual environment"
+            return 1
+        fi
     fi
 
     # Install dependencies if needed
     if [ ! -f "$dashboard_dir/venv/.deps_installed" ]; then
-        source "$dashboard_dir/venv/bin/activate"
-        pip install -q flask flask-cors pyyaml 2>/dev/null
+        echo -e "  ${DIM}Installing dashboard dependencies (Flask, PyYAML)...${NC}"
+        if ! (source "$dashboard_dir/venv/bin/activate" && pip install -q flask flask-cors pyyaml 2>&1); then
+            echo -e "  ${YELLOW}⚠${NC} Failed to install dependencies - dashboard disabled"
+            return 1
+        fi
         touch "$dashboard_dir/venv/.deps_installed"
-        deactivate
     fi
 
     # Start dashboard in background
@@ -680,6 +685,7 @@ start_dashboard() {
         return 0
     else
         echo -e "  ${YELLOW}⚠${NC} Dashboard failed to start - check $LOG_DIR/dashboard.log"
+        cat "$LOG_DIR/dashboard.log" 2>/dev/null | tail -5
         return 1
     fi
 }
