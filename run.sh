@@ -86,12 +86,23 @@ is_port_busy() {
 }
 
 # Docker Compose command helper (uses v2 if available, fallback to v1)
+# Cache the compose command to avoid repeated slow checks
+DOCKER_COMPOSE_CMD=""
+
 docker_compose() {
-    if command -v docker &>/dev/null && docker compose version &>/dev/null; then
-        docker compose "$@"
-    else
-        docker-compose "$@"
+    # Cache the docker compose command detection on first use
+    if [ -z "$DOCKER_COMPOSE_CMD" ]; then
+        # Use timeout to avoid hanging if Docker daemon is unresponsive
+        if command -v docker &>/dev/null && timeout 5 docker compose version &>/dev/null 2>&1; then
+            DOCKER_COMPOSE_CMD="docker compose"
+        elif command -v docker-compose &>/dev/null; then
+            DOCKER_COMPOSE_CMD="docker-compose"
+        else
+            echo "Error: Docker Compose not found. Please install Docker with Compose plugin." >&2
+            return 1
+        fi
     fi
+    $DOCKER_COMPOSE_CMD "$@"
 }
 
 # ============================================
@@ -502,10 +513,13 @@ live_build_monitor() {
 stop_live_monitor() {
     local pids="$1"
     for pid in $pids; do
+        # Kill the process and its children (including tail -f in the pipeline)
         kill $pid 2>/dev/null || true
+        # Also kill any child processes (tail -f runs in a subshell)
+        pkill -P $pid 2>/dev/null || true
     done
     # Small delay to ensure clean output
-    sleep 0.2
+    sleep 0.3
     echo -e "\n  ${CYAN}════════════════════════════════════════════════════════════════${NC}\n"
 }
 
@@ -1663,6 +1677,15 @@ do_run() {
     # Enable Compose Bake for better parallel build visualization (service-wise boxes)
     export COMPOSE_BAKE=true
 
+    # Verify Docker is responsive before starting parallel builds
+    echo -ne "  ${DIM}Checking Docker availability...${NC}"
+    if ! timeout 10 docker info &>/dev/null; then
+        echo -e "\r  ${RED}✗${NC} Docker is not responding. Please ensure Docker Desktop is running."
+        echo -e "    ${DIM}Try: 'docker info' to diagnose${NC}"
+        return 1
+    fi
+    echo -e "\r  ${GREEN}✓${NC} Docker is ready                  "
+
     # Capture build output to log file
     local build_start=$(now_ms)
     local build_log="${LOG_DIR}/build_output.log"
@@ -1710,10 +1733,12 @@ do_run() {
         build_pids="$build_pids $!"
     done
 
-    # Monitor progress while builds are running
+    # Monitor progress while builds are running (with timeout)
     local pending_services="$all_services"
     local completed_count=0
     local total_count=$(echo $all_services | wc -w | xargs)
+    local wait_time=0
+    local max_wait=600  # 10 minute timeout for builds
 
     echo -ne "  ${DIM}Progress: [${NC}"
 
@@ -1742,6 +1767,21 @@ do_run() {
             for i in $(seq 1 $remaining); do echo -ne "${DIM}○${NC}"; done
             echo -ne " ${DIM}building...${NC}"
             sleep 1
+            wait_time=$((wait_time + 1))
+
+            # Timeout check - kill stuck builds after max_wait seconds
+            if [ $wait_time -ge $max_wait ]; then
+                echo -e "\n  ${YELLOW}⚠${NC} Build timeout after ${max_wait}s - killing stuck builds..."
+                for pid in $build_pids; do
+                    kill $pid 2>/dev/null || true
+                    pkill -P $pid 2>/dev/null || true
+                done
+                # Mark remaining as failed
+                for svc in $pending_services; do
+                    echo "failed" > "${build_tmp}/${svc}.status"
+                done
+                break
+            fi
         fi
     done
 
