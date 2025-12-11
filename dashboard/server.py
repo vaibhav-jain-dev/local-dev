@@ -367,6 +367,27 @@ def stream_all_logs():
 
     return Response(generate(), mimetype='text/event-stream')
 
+@app.route('/api/shutdown', methods=['POST'])
+def api_shutdown():
+    """Shutdown the dashboard server gracefully"""
+    def shutdown_server():
+        time.sleep(0.5)  # Give time for response to be sent
+        # Kill the dashboard process
+        pid_file = LOGS_DIR / 'dashboard.pid'
+        if pid_file.exists():
+            try:
+                pid_file.unlink()
+            except:
+                pass
+        os._exit(0)
+
+    # Start shutdown in background thread
+    shutdown_thread = threading.Thread(target=shutdown_server)
+    shutdown_thread.daemon = True
+    shutdown_thread.start()
+
+    return jsonify({'status': 'shutting_down', 'message': 'Dashboard will close in a moment'})
+
 if __name__ == '__main__':
     print("\n" + "="*60)
     print("  Local Dev Dashboard")
