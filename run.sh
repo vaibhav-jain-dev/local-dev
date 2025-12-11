@@ -1141,15 +1141,29 @@ generate_docker_compose() {
     local services_to_include="$1"
     local workers_to_include="$2"
     local skipped_services=""
+    local web_clients=""
 
+    # Separate web clients from backend services
+    local backend_services=""
+    for service in $services_to_include; do
+        if is_web_client "$service"; then
+            web_clients="$web_clients $service"
+        else
+            backend_services="$backend_services $service"
+        fi
+    done
+    backend_services=$(echo $backend_services | xargs)
+    web_clients=$(echo $web_clients | xargs)
+
+    # Generate main docker-compose.yml for backend services
     cat > docker-compose.yml << 'COMPOSE'
 services:
 COMPOSE
 
-    for service in $services_to_include; do
-        local repo=$(yq -r ".services.\"${service}\".git_repo" $CONFIG_FILE 2>/dev/null)
-        local port=$(yq -r ".services.\"${service}\".port" $CONFIG_FILE 2>/dev/null)
-        local service_type=$(yq -r ".services.\"${service}\".type" $CONFIG_FILE 2>/dev/null)
+    for service in $backend_services; do
+        local repo=$(get_service_config_path "$service" "git_repo")
+        local port=$(get_service_config_path "$service" "port")
+        local service_type=$(get_service_config_path "$service" "type")
         local dir_name=$(basename "$repo" .git)
 
         # Check for missing directory or dockerfile with clear error messages
@@ -1289,6 +1303,82 @@ networks:
   oh-network:
     driver: bridge
 COMPOSE
+
+    # Generate separate docker-compose-web.yml for web clients
+    if [ -n "$web_clients" ]; then
+        echo -e "  ${DIM}Generating docker-compose-web.yml for web clients: $web_clients${NC}"
+        cat > docker-compose-web.yml << 'COMPOSE'
+services:
+COMPOSE
+
+        for service in $web_clients; do
+            local repo=$(get_service_config_path "$service" "git_repo")
+            local port=$(get_service_config_path "$service" "port")
+            local service_type=$(get_service_config_path "$service" "type")
+            local dir_name=$(basename "$repo" .git)
+
+            # Check for missing directory or dockerfile
+            if [ ! -d "cloned/$dir_name" ]; then
+                echo -e "  ${YELLOW}⚠ Skipping $service: cloned/$dir_name directory not found${NC}"
+                continue
+            fi
+            if [ ! -f "cloned/$dir_name/dev.Dockerfile" ]; then
+                echo -e "  ${YELLOW}⚠ Skipping $service: cloned/$dir_name/dev.Dockerfile not found${NC}"
+                continue
+            fi
+
+            # Web clients use host network to access localhost backend endpoints
+            if [ "$service_type" = "nextjs" ]; then
+                cat >> docker-compose-web.yml << COMPOSE
+  ${service}:
+    build:
+      context: ./cloned/${dir_name}
+      dockerfile: dev.Dockerfile
+      args:
+        GITHUB_NPM_TOKEN: \${GITHUB_NPM_TOKEN:-}
+    container_name: ${service}
+    ports: ["${port}:${port}"]
+    volumes:
+      - ./cloned/${dir_name}:/app
+      - /app/node_modules
+      - /app/.next
+    environment:
+      NODE_ENV: development
+      NEXT_TELEMETRY_DISABLED: 1
+      WATCHPACK_POLLING: 'true'
+    network_mode: host
+    platform: linux/amd64
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+
+COMPOSE
+            elif [ "$service_type" = "nodejs" ]; then
+                cat >> docker-compose-web.yml << COMPOSE
+  ${service}:
+    build:
+      context: ./cloned/${dir_name}
+      dockerfile: dev.Dockerfile
+      args:
+        GITHUB_NPM_TOKEN: \${GITHUB_NPM_TOKEN:-}
+    container_name: ${service}
+    ports: ["${port}:${port}"]
+    volumes:
+      - ./cloned/${dir_name}:/app
+      - /app/node_modules
+    environment:
+      NODE_ENV: development
+      PORT: ${port}
+    network_mode: host
+    platform: linux/amd64
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+
+COMPOSE
+            fi
+        done
+    fi
 }
 
 cache_containers() {
@@ -1474,11 +1564,13 @@ do_run() {
     # Determine services to run
     local services_to_run=""
     if [ -n "$SERVICES" ]; then
-        # Validate each service exists in config (check services or emulators)
+        # Validate each service exists in config (check services, clients.web, or clients.android)
         for svc in $SERVICES; do
             if yq -r ".services.\"${svc}\"" $CONFIG_FILE 2>/dev/null | grep -qv "null"; then
                 services_to_run="$services_to_run $svc"
-            elif yq -r ".emulators.\"${svc}\"" $CONFIG_FILE 2>/dev/null | grep -qv "null"; then
+            elif yq -r ".clients.web.\"${svc}\"" $CONFIG_FILE 2>/dev/null | grep -qv "null"; then
+                services_to_run="$services_to_run $svc"
+            elif yq -r ".clients.android.\"${svc}\"" $CONFIG_FILE 2>/dev/null | grep -qv "null"; then
                 # Emulator specified directly - will be handled below
                 services_to_run="$services_to_run $svc"
             else
@@ -1487,9 +1579,15 @@ do_run() {
             fi
         done
     else
-        # Get all enabled services
+        # Get all enabled backend services
         for svc in $(yq -r '.services | keys | .[]' $CONFIG_FILE 2>/dev/null); do
             if [ "$(yq -r ".services.\"${svc}\".enabled" $CONFIG_FILE 2>/dev/null)" = "true" ]; then
+                services_to_run="$services_to_run $svc"
+            fi
+        done
+        # Get all enabled web clients
+        for svc in $(yq -r '.clients.web | keys | .[]' $CONFIG_FILE 2>/dev/null); do
+            if [ "$(yq -r ".clients.web.\"${svc}\".enabled" $CONFIG_FILE 2>/dev/null)" = "true" ]; then
                 services_to_run="$services_to_run $svc"
             fi
         done
@@ -1516,14 +1614,14 @@ do_run() {
     # Determine emulators to run (only if --include-app flag is passed)
     local emulators_to_run=""
     if [ "$INCLUDE_APP" = "true" ]; then
-        for emu in $(yq -r '.emulators | keys | .[]' $CONFIG_FILE 2>/dev/null); do
+        for emu in $(yq -r '.clients.android | keys | .[]' $CONFIG_FILE 2>/dev/null); do
             emulators_to_run="$emulators_to_run $emu"
             # Remove emulator from services_to_run if it was explicitly requested
             services_to_run=$(echo "$services_to_run" | sed "s/\b$emu\b//g" | xargs)
         done
     else
         # Check if any emulator was explicitly requested
-        for emu in $(yq -r '.emulators | keys | .[]' $CONFIG_FILE 2>/dev/null); do
+        for emu in $(yq -r '.clients.android | keys | .[]' $CONFIG_FILE 2>/dev/null); do
             if echo "$services_to_run" | grep -qw "$emu"; then
                 emulators_to_run="$emulators_to_run $emu"
                 services_to_run=$(echo "$services_to_run" | sed "s/\b$emu\b//g" | xargs)
@@ -1722,7 +1820,7 @@ do_run() {
     local has_frontend_service=false
     local has_python_service=false
     for service in $services_ready; do
-        local service_type=$(yq -r ".services.\"${service}\".type" $CONFIG_FILE 2>/dev/null)
+        local service_type=$(get_service_config_path "$service" "type")
         if [ "$service_type" = "nextjs" ] || [ "$service_type" = "nodejs" ]; then
             has_frontend_service=true
         elif [ "$service_type" = "null" ] || [ -z "$service_type" ]; then
@@ -1837,19 +1935,36 @@ do_run() {
     # This prevents one failing build from cancelling others (default BuildKit behavior)
     local build_tmp=$(mktemp -d)
     local build_pids=""
-    local all_services="$services_ready"
-    # Add workers to the build list (format is "worker:parent", extract worker name)
+
+    # Separate backend and web services
+    local backend_services=""
+    local web_services=""
+    for svc in $services_ready; do
+        if is_web_client "$svc"; then
+            web_services="$web_services $svc"
+        else
+            backend_services="$backend_services $svc"
+        fi
+    done
+
+    # Add workers to backend services
     for worker_entry in $workers_ready; do
         local worker_name="${worker_entry%%:*}"
-        all_services="$all_services $worker_name"
+        backend_services="$backend_services $worker_name"
     done
+
+    backend_services=$(echo $backend_services | xargs)
+    web_services=$(echo $web_services | xargs)
+    local all_services="$backend_services $web_services"
+    all_services=$(echo $all_services | xargs)
 
     # Safety check: ensure we have services to build
     if [ -z "$all_services" ]; then
         echo -e "  ${RED}✗${NC} No services to build"
         return 1
     fi
-    echo -e "  ${DIM}Services to build: ${NC}${BOLD}$all_services${NC}"
+    echo -e "  ${DIM}Backend services to build: ${NC}${BOLD}$backend_services${NC}"
+    [ -n "$web_services" ] && echo -e "  ${DIM}Web services to build: ${NC}${BOLD}$web_services${NC}"
 
     # Start live log monitor if enabled
     local live_monitor_pids=""
@@ -1866,20 +1981,49 @@ do_run() {
 
     # Launch builds in parallel for each service
     echo -e "  ${DIM}Starting build processes...${NC}"
-    for svc in $all_services; do
+
+    # Build backend services using docker-compose.yml
+    for svc in $backend_services; do
         local build_eta=$(get_operation_avg "build:$svc")
         progress_start_operation "3" "$svc" "$build_eta"
         (
             local svc_log="${build_tmp}/${svc}.log"
-            echo "[$(date '+%H:%M:%S')] Starting build for $svc" >> "$svc_log"
-            $DOCKER_COMPOSE_CMD --progress=plain build "$svc" >> "$svc_log" 2>&1
-            local exit_code=$?
+            local color=$(get_service_color "$svc")
+            echo "[$(date '+%H:%M:%S')] Starting build for $svc (backend)" >> "$svc_log"
+            # Use tee to show logs in real-time while also saving to file
+            $DOCKER_COMPOSE_CMD --progress=plain build "$svc" 2>&1 | tee -a "$svc_log" | while IFS= read -r line; do
+                echo -e "${color}[${svc}]${NC} $line"
+            done
+            local exit_code=${PIPESTATUS[0]}
             echo "[$(date '+%H:%M:%S')] Build finished for $svc with exit code: $exit_code" >> "$svc_log"
             # Check for actual Docker build failures (not npm/webpack warnings that contain "error")
             # - exit code non-zero = definite failure
             # - "failed to solve" = Docker BuildKit failure
             # - "executor failed" = Docker build step failure
             # - "ERROR: " at line start = Docker error message
+            if [ $exit_code -eq 0 ] && ! grep -qE "failed to solve|executor failed running|^ERROR: " "$svc_log" 2>/dev/null; then
+                echo "success" > "${build_tmp}/${svc}.status"
+            else
+                echo "failed" > "${build_tmp}/${svc}.status"
+            fi
+        ) &
+        build_pids="$build_pids $!"
+    done
+
+    # Build web services using docker-compose-web.yml
+    for svc in $web_services; do
+        local build_eta=$(get_operation_avg "build:$svc")
+        progress_start_operation "3" "$svc" "$build_eta"
+        (
+            local svc_log="${build_tmp}/${svc}.log"
+            local color=$(get_service_color "$svc")
+            echo "[$(date '+%H:%M:%S')] Starting build for $svc (web client)" >> "$svc_log"
+            # Use tee to show logs in real-time while also saving to file
+            $DOCKER_COMPOSE_CMD -f docker-compose-web.yml --progress=plain build "$svc" 2>&1 | tee -a "$svc_log" | while IFS= read -r line; do
+                echo -e "${color}[${svc}]${NC} $line"
+            done
+            local exit_code=${PIPESTATUS[0]}
+            echo "[$(date '+%H:%M:%S')] Build finished for $svc with exit code: $exit_code" >> "$svc_log"
             if [ $exit_code -eq 0 ] && ! grep -qE "failed to solve|executor failed running|^ERROR: " "$svc_log" 2>/dev/null; then
                 echo "success" > "${build_tmp}/${svc}.status"
             else
@@ -2054,38 +2198,73 @@ do_run() {
         redis_pid=$!
     fi
 
-    # Start containers that were successfully built
-    # Build the list of services to start (services + workers)
-    local services_to_start="$services_ready"
+    # Separate backend and web clients from services_ready
+    local backend_to_start=""
+    local web_to_start=""
+    for svc in $services_ready; do
+        if is_web_client "$svc"; then
+            web_to_start="$web_to_start $svc"
+        else
+            backend_to_start="$backend_to_start $svc"
+        fi
+    done
+    backend_to_start=$(echo $backend_to_start | xargs)
+    web_to_start=$(echo $web_to_start | xargs)
+
+    # Add workers to backend services
     for worker_entry in $workers_ready; do
         local worker_name="${worker_entry%%:*}"
-        services_to_start="$services_to_start $worker_name"
+        backend_to_start="$backend_to_start $worker_name"
     done
-    services_to_start=$(echo $services_to_start | xargs)
+    backend_to_start=$(echo $backend_to_start | xargs)
 
-    local start_count=$(echo $services_to_start | wc -w | xargs)
-    echo -e "  ${DIM}Starting $start_count container(s): ${NC}${BOLD}$services_to_start${NC}"
-    local up_log="${LOG_DIR}/up_output.log"
-    # Only start the services that built successfully
-    echo -e "  ${DIM}Running: docker compose up -d $services_to_start${NC}"
-    docker_compose up -d $services_to_start 2>&1 | tee "$up_log"
-    local up_status=${PIPESTATUS[0]}
+    # Start backend services first (using docker-compose.yml)
+    if [ -n "$backend_to_start" ]; then
+        local backend_count=$(echo $backend_to_start | wc -w | xargs)
+        echo -e "  ${DIM}Starting $backend_count backend container(s): ${NC}${BOLD}$backend_to_start${NC}"
+        local up_log="${LOG_DIR}/up_output.log"
+        echo -e "  ${DIM}Running: docker compose up -d $backend_to_start${NC}"
+        docker_compose up -d $backend_to_start 2>&1 | tee "$up_log"
+        local up_status=${PIPESTATUS[0]}
+
+        # Check for errors in output (be specific to Docker errors, avoid false positives from app logs)
+        if grep -qE "^ERROR: |Cannot start container|failed to start|is not running" "$up_log" 2>/dev/null; then
+            up_status=1
+        fi
+
+        if [ $up_status -eq 0 ]; then
+            echo -e "  ${GREEN}✓${NC} Backend containers started"
+        else
+            echo -e "  ${YELLOW}⚠${NC} Some backend containers may have failed to start"
+            echo -e "  ${DIM}Check the output above for details${NC}"
+            echo -e "  ${DIM}Full log: $up_log${NC}"
+        fi
+    fi
+
+    # Start web clients separately (using docker-compose-web.yml with host network)
+    if [ -n "$web_to_start" ] && [ -f "docker-compose-web.yml" ]; then
+        local web_count=$(echo $web_to_start | wc -w | xargs)
+        echo -e "  ${DIM}Starting $web_count web client container(s): ${NC}${BOLD}$web_to_start${NC}"
+        local up_web_log="${LOG_DIR}/up_web_output.log"
+        echo -e "  ${DIM}Running: docker compose -f docker-compose-web.yml up -d $web_to_start${NC}"
+        docker_compose -f docker-compose-web.yml up -d $web_to_start 2>&1 | tee "$up_web_log"
+        local up_web_status=${PIPESTATUS[0]}
+
+        if grep -qE "^ERROR: |Cannot start container|failed to start|is not running" "$up_web_log" 2>/dev/null; then
+            up_web_status=1
+        fi
+
+        if [ $up_web_status -eq 0 ]; then
+            echo -e "  ${GREEN}✓${NC} Web client containers started"
+        else
+            echo -e "  ${YELLOW}⚠${NC} Some web client containers may have failed to start"
+            echo -e "  ${DIM}Check the output above for details${NC}"
+            echo -e "  ${DIM}Full log: $up_web_log${NC}"
+        fi
+    fi
 
     # Wait for Redis setup to complete
     wait $redis_pid 2>/dev/null || true
-
-    # Check for errors in output (be specific to Docker errors, avoid false positives from app logs)
-    if grep -qE "^ERROR: |Cannot start container|failed to start|is not running" "$up_log" 2>/dev/null; then
-        up_status=1
-    fi
-
-    if [ $up_status -eq 0 ]; then
-        echo -e "  ${GREEN}✓${NC} All containers started"
-    else
-        echo -e "  ${YELLOW}⚠${NC} Some containers may have failed to start"
-        echo -e "  ${DIM}Check the output above for details${NC}"
-        echo -e "  ${DIM}Full log: $up_log${NC}"
-    fi
 
     # Debug: show what containers were actually created
     local created_containers=$(docker ps -a --format "{{.Names}}" 2>/dev/null | tr '\n' ' ')
@@ -2105,8 +2284,8 @@ do_run() {
         progress_start_phase "5" "0"
 
         for emulator in $emulators_ready; do
-            local repo=$(yq -r ".emulators.\"${emulator}\".git_repo" $CONFIG_FILE 2>/dev/null)
-            local script=$(yq -r ".emulators.\"${emulator}\".script" $CONFIG_FILE 2>/dev/null)
+            local repo=$(yq -r ".clients.android.\"${emulator}\".git_repo" $CONFIG_FILE 2>/dev/null)
+            local script=$(yq -r ".clients.android.\"${emulator}\".script" $CONFIG_FILE 2>/dev/null)
             local dir_name=$(basename "$repo" .git)
 
             echo -e "  ${MAGENTA}▶${NC} Starting $emulator..."
@@ -2141,7 +2320,7 @@ do_run() {
 
     # Show services status
     for service in $services_ready; do
-        local port=$(yq -r ".services.\"${service}\".port" $CONFIG_FILE 2>/dev/null)
+        local port=$(get_service_config_path "$service" "port")
 
         if docker ps --format "{{.Names}}" 2>/dev/null | grep -q "^${service}$"; then
             echo -e "${GREEN}✓${NC} ${BOLD}$service${NC}"
