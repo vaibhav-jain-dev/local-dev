@@ -32,6 +32,7 @@ RUN grep -v -E "^PyYAML==|^wrapt==" /requirements/dev.txt > /requirements/dev_fi
 
 # Add python-core-utils from Orange Health private GitHub repo
 ARG PYTHON_CORE_UTILS_VERSION=v1.1.1#egg=python-core-utils
+ARG PYTHON_CORE_UTILS_TOKEN
 RUN pip install git+https://x-access-token:${PYTHON_CORE_UTILS_TOKEN}@github.com/Orange-Health/python-core-utils.git@${PYTHON_CORE_UTILS_VERSION}
 
 RUN mkdir /app
