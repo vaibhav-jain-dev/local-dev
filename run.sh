@@ -460,7 +460,12 @@ start_dashboard() {
     sleep 2
 
     if kill -0 $DASHBOARD_PID 2>/dev/null; then
-        echo -e "  ${GREEN}✓${NC} Dashboard started at ${CYAN}http://localhost:9999${NC}"
+        echo -e "  ${GREEN}✓${NC} Dashboard started"
+        echo ""
+        echo -e "  ${CYAN}╔══════════════════════════════════════════════════╗${NC}"
+        echo -e "  ${CYAN}║${NC}  ${BOLD}Dashboard:${NC} \033]8;;http://localhost:9999\033\\${CYAN}${BOLD}http://localhost:9999${NC}\033]8;;\033\\  ${CYAN}║${NC}"
+        echo -e "  ${CYAN}╚══════════════════════════════════════════════════╝${NC}"
+        echo ""
         return 0
     else
         echo -e "  ${YELLOW}⚠${NC} Dashboard failed to start - check $LOG_DIR/dashboard.log"
@@ -1139,7 +1144,7 @@ parse_args() {
             INCLUDE_APP="true"
         elif [ "$arg" = "--live" ] || [ "$arg" = "-l" ]; then
             LIVE_LOGS="true"
-        elif [ "$arg" = "--dashboard" ] || [ "$arg" = "--ui" ] || [ "$arg" = "-d" ]; then
+        elif [ "$arg" = "--dashboard" ] || [ "$arg" = "--ui" ] || [ "$arg" = "-d" ] || [ "$arg" = "d" ]; then
             DASHBOARD="true"
         elif [ "$arg" = "--local" ]; then
             expect_local_value="true"
@@ -1477,7 +1482,7 @@ do_run() {
     # Check if any frontend service needs GITHUB_NPM_TOKEN
     local has_frontend_service=false
     local has_python_service=false
-    for service in $services_to_include; do
+    for service in $services_ready; do
         local service_type=$(yq -r ".services.\"${service}\".type" $CONFIG_FILE 2>/dev/null)
         if [ "$service_type" = "nextjs" ] || [ "$service_type" = "nodejs" ]; then
             has_frontend_service=true
@@ -1805,11 +1810,23 @@ do_run() {
     echo -e "  Services: ${GREEN}$running_count running${NC}"
     [ $failed_count -gt 0 ] && echo -e "  Failed: ${RED}$failed_count${NC}"
 
+    # Show dashboard link if running
+    if [ "$DASHBOARD" = "true" ] && [ -f "$LOG_DIR/dashboard.pid" ]; then
+        local dashboard_pid=$(cat "$LOG_DIR/dashboard.pid")
+        if kill -0 $dashboard_pid 2>/dev/null; then
+            echo ""
+            echo -e "${CYAN}╔══════════════════════════════════════════════════╗${NC}"
+            echo -e "${CYAN}║${NC}  ${BOLD}Dashboard:${NC} \033]8;;http://localhost:9999\033\\${CYAN}${BOLD}http://localhost:9999${NC}\033]8;;\033\\  ${CYAN}║${NC}"
+            echo -e "${CYAN}╚══════════════════════════════════════════════════╝${NC}"
+        fi
+    fi
+
     echo ""
     echo -e "${CYAN}Commands:${NC}"
     echo -e "  make logs <service>  - View logs"
     echo -e "  make restart         - Restart all"
     echo -e "  make stop            - Stop all"
+    [ "$DASHBOARD" = "true" ] && echo -e "  make dashboard       - Open dashboard (if closed)"
 }
 
 # ============================================
@@ -1845,12 +1862,15 @@ case $ACTION in
         ;;
     dashboard)
         echo -e "Starting dashboard..."
-        start_dashboard
-        echo ""
-        echo -e "${CYAN}Dashboard is running at ${BOLD}http://localhost:9999${NC}"
-        echo -e "${DIM}Press Ctrl+C to stop${NC}"
-        # Keep running until interrupted
-        wait
+        if start_dashboard; then
+            echo ""
+            echo -e "${DIM}Press Ctrl+C to stop${NC}"
+            # Keep running until interrupted
+            wait
+        else
+            echo -e "${RED}Failed to start dashboard${NC}"
+            exit 1
+        fi
         ;;
     run|*)
         do_run
