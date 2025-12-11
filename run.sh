@@ -564,6 +564,19 @@ start_dashboard() {
         echo -e "  ${CYAN}║${NC}  ${BOLD}Dashboard:${NC} \033]8;;http://localhost:9999\033\\${CYAN}${BOLD}http://localhost:9999${NC}\033]8;;\033\\  ${CYAN}║${NC}"
         echo -e "  ${CYAN}╚══════════════════════════════════════════════════╝${NC}"
         echo ""
+
+        # Auto-open dashboard in browser
+        local dashboard_url="http://localhost:9999"
+        if command -v open &>/dev/null; then
+            # macOS
+            open "$dashboard_url" 2>/dev/null &
+            echo -e "  ${DIM}Opening dashboard in browser...${NC}"
+        elif command -v xdg-open &>/dev/null; then
+            # Linux
+            xdg-open "$dashboard_url" 2>/dev/null &
+            echo -e "  ${DIM}Opening dashboard in browser...${NC}"
+        fi
+
         return 0
     else
         echo -e "  ${YELLOW}⚠${NC} Dashboard failed to start - check $LOG_DIR/dashboard.log"
@@ -1696,7 +1709,44 @@ do_run() {
         build_pids="$build_pids $!"
     done
 
-    # Wait for all builds to complete
+    # Monitor progress while builds are running
+    local pending_services="$all_services"
+    local completed_count=0
+    local total_count=$(echo $all_services | wc -w | xargs)
+
+    echo -ne "  ${DIM}Progress: [${NC}"
+
+    while [ -n "$pending_services" ]; do
+        local still_pending=""
+        for svc in $pending_services; do
+            if [ -f "${build_tmp}/${svc}.status" ]; then
+                local status=$(cat "${build_tmp}/${svc}.status")
+                completed_count=$((completed_count + 1))
+                if [ "$status" = "success" ]; then
+                    echo -ne "${GREEN}●${NC}"
+                else
+                    echo -ne "${RED}●${NC}"
+                fi
+            else
+                still_pending="$still_pending $svc"
+            fi
+        done
+        pending_services=$(echo $still_pending | xargs)
+
+        # Show remaining count if still building
+        if [ -n "$pending_services" ]; then
+            local remaining=$(echo $pending_services | wc -w | xargs)
+            echo -ne "\r  ${DIM}Progress: [$completed_count/$total_count]${NC} "
+            for i in $(seq 1 $completed_count); do echo -ne "${GREEN}●${NC}"; done
+            for i in $(seq 1 $remaining); do echo -ne "${DIM}○${NC}"; done
+            echo -ne " ${DIM}building...${NC}"
+            sleep 1
+        fi
+    done
+
+    echo -e "\r  ${DIM}Progress: [$total_count/$total_count]${NC} ${GREEN}done${NC}                    "
+
+    # Wait for all builds to complete (cleanup any remaining)
     for pid in $build_pids; do
         wait $pid 2>/dev/null || true
     done
