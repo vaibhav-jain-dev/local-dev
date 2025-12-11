@@ -14,6 +14,10 @@ ADD . ${repo}
 
 RUN go build -o /go/bin/consumer ${repo}/main/consumer
 
+RUN chmod +x ./docker-entrypoint.sh
+
+ENV QUEUE_NAME=all
+
 ENTRYPOINT [ "./docker-entrypoint.sh" ]
 
 CMD [ "/go/bin/consumer" ]

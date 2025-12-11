@@ -14,6 +14,10 @@ ADD . ${repo}
 
 RUN go build -o /go/bin/scheduler ${repo}/main/scheduler
 
+RUN chmod +x ./docker-entrypoint.sh
+
+ENV QUEUE_NAME=all
+
 ENTRYPOINT [ "./docker-entrypoint.sh" ]
 
 CMD [ "/go/bin/scheduler" ]

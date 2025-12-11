@@ -40,6 +40,7 @@ TARGET=""
 REFRESH="false"
 INCLUDE_APP="false"
 LIVE_LOGS="false"
+LOCAL_REDIS="false"
 
 # ============================================
 # Utility Functions
@@ -455,6 +456,84 @@ force_kill_redis_port() {
 
     sleep 1
     echo -e " ${GREEN}✓${NC}"
+}
+
+# ============================================
+# Local Redis Docker Functions
+# ============================================
+
+LOCAL_REDIS_CONTAINER="oh-local-redis"
+
+is_local_redis_running() {
+    docker ps --format "{{.Names}}" 2>/dev/null | grep -q "^${LOCAL_REDIS_CONTAINER}$"
+}
+
+is_local_redis_exists() {
+    docker ps -a --format "{{.Names}}" 2>/dev/null | grep -q "^${LOCAL_REDIS_CONTAINER}$"
+}
+
+start_local_redis() {
+    local port=$(get_redis_port)
+
+    # Check if already running
+    if is_local_redis_running; then
+        echo -e "  ${GREEN}✓${NC} Local Redis already running on port $port"
+        return 0
+    fi
+
+    # If container exists but not running, start it
+    if is_local_redis_exists; then
+        echo -n "  Starting existing local Redis container..."
+        docker start "$LOCAL_REDIS_CONTAINER" >/dev/null 2>&1
+        sleep 1
+        if is_local_redis_running; then
+            echo -e " ${GREEN}✓${NC}"
+            return 0
+        else
+            echo -e " ${RED}✗${NC}"
+            # Remove failed container and try fresh
+            docker rm -f "$LOCAL_REDIS_CONTAINER" >/dev/null 2>&1
+        fi
+    fi
+
+    # Force close the port before starting
+    echo -n "  Checking port $port..."
+    if is_port_busy "$port"; then
+        echo -e " ${YELLOW}busy${NC}"
+        force_kill_redis_port
+    else
+        echo -e " ${GREEN}free${NC}"
+    fi
+
+    # Create new Redis container on host network (localhost accessible)
+    echo -n "  Starting new local Redis container..."
+    docker run -d \
+        --name "$LOCAL_REDIS_CONTAINER" \
+        --network host \
+        --restart unless-stopped \
+        redis:7-alpine \
+        redis-server --port "$port" >/dev/null 2>&1
+
+    sleep 2
+
+    if is_local_redis_running; then
+        echo -e " ${GREEN}✓${NC}"
+        echo -e "  Redis running on localhost:$port"
+        return 0
+    else
+        echo -e " ${RED}✗${NC}"
+        echo -e "  ${YELLOW}Failed to start local Redis. Check docker logs:${NC}"
+        echo -e "    docker logs $LOCAL_REDIS_CONTAINER"
+        return 1
+    fi
+}
+
+stop_local_redis() {
+    if is_local_redis_exists; then
+        echo -n "  Stopping local Redis container..."
+        docker stop "$LOCAL_REDIS_CONTAINER" >/dev/null 2>&1 || true
+        echo -e " ${GREEN}✓${NC}"
+    fi
 }
 
 # ============================================
@@ -969,19 +1048,38 @@ parse_args() {
             ;;
     esac
 
-    # Check for refresh, --include-app, and --live flags (can be anywhere in args)
+    # Check for refresh, --include-app, --live, and --local flags (can be anywhere in args)
     local remaining_args=""
+    local expect_local_value="false"
     for arg in "$@"; do
-        if [ "$arg" = "refresh" ]; then
+        if [ "$expect_local_value" = "true" ]; then
+            if [ "$arg" = "redis" ]; then
+                LOCAL_REDIS="true"
+            else
+                echo -e "${RED}Error: --local only supports 'redis' currently${NC}"
+                echo -e "Usage: make run --local redis"
+                exit 1
+            fi
+            expect_local_value="false"
+        elif [ "$arg" = "refresh" ]; then
             REFRESH="true"
         elif [ "$arg" = "--include-app" ]; then
             INCLUDE_APP="true"
         elif [ "$arg" = "--live" ] || [ "$arg" = "-l" ]; then
             LIVE_LOGS="true"
+        elif [ "$arg" = "--local" ]; then
+            expect_local_value="true"
         else
             remaining_args="$remaining_args $arg"
         fi
     done
+
+    # Check if --local was specified without a value
+    if [ "$expect_local_value" = "true" ]; then
+        echo -e "${RED}Error: --local requires a value (e.g., --local redis)${NC}"
+        exit 1
+    fi
+
     set -- $remaining_args
 
     # Parse namespace and services
@@ -1008,6 +1106,7 @@ do_stop() {
     echo -e "${YELLOW}⏹  Stopping services...${NC}"
     docker_compose down 2>/dev/null || true
     stop_redis_portforward
+    stop_local_redis
     rm -f "$CACHE_FILE"
     echo -e "${GREEN}✓ All services stopped${NC}"
 }
@@ -1015,6 +1114,8 @@ do_stop() {
 do_clean() {
     echo -e "${YELLOW}🧹 Cleaning environment...${NC}"
     docker_compose down -v 2>/dev/null || true
+    # Remove local Redis container completely
+    docker rm -f "$LOCAL_REDIS_CONTAINER" 2>/dev/null || true
     docker system prune -af 2>/dev/null || true
     rm -rf cloned docker-compose.yml logs/*
     stop_redis_portforward
@@ -1155,6 +1256,7 @@ do_run() {
     [ "$emulator_count" -gt 0 ] && echo -e "${BOLD}Emulators:${NC} $emulator_count apps"
     [ "$REFRESH" = "true" ] && echo -e "${BOLD}Refresh:${NC} ${GREEN}yes${NC} (will pull latest code)"
     [ "$INCLUDE_APP" = "true" ] && echo -e "${BOLD}Include Apps:${NC} ${GREEN}yes${NC} (Android emulators)"
+    [ "$LOCAL_REDIS" = "true" ] && echo -e "${BOLD}Local Redis:${NC} ${GREEN}yes${NC} (Docker container on localhost)"
 
     # ========== Phase 1: Repository Setup (Parallel) ==========
     start_phase "Phase 1: Repository Setup"
@@ -1487,9 +1589,16 @@ do_run() {
     # ========== Phase 4 & 5: Redis + Start Containers (Parallel) ==========
     start_phase "Phase 4: Redis + Starting Containers"
 
-    # Start Redis port-forward in background
-    start_redis_portforward &
-    local redis_pid=$!
+    # Start Redis (local Docker or Kubernetes port-forward)
+    local redis_pid=""
+    if [ "$LOCAL_REDIS" = "true" ]; then
+        echo -e "  ${CYAN}Using local Docker Redis${NC}"
+        start_local_redis &
+        redis_pid=$!
+    else
+        start_redis_portforward &
+        redis_pid=$!
+    fi
 
     # Start containers that were successfully built
     # Build the list of services to start (services + workers)
@@ -1501,9 +1610,10 @@ do_run() {
     services_to_start=$(echo $services_to_start | xargs)
 
     local start_count=$(echo $services_to_start | wc -w | xargs)
-    echo -e "  ${DIM}Starting $start_count container(s) in parallel...${NC}"
+    echo -e "  ${DIM}Starting $start_count container(s): ${NC}${BOLD}$services_to_start${NC}"
     local up_log="${LOG_DIR}/up_output.log"
     # Only start the services that built successfully
+    echo -e "  ${DIM}Running: docker compose up -d $services_to_start${NC}"
     docker_compose up -d $services_to_start 2>&1 | tee "$up_log"
     local up_status=${PIPESTATUS[0]}
 

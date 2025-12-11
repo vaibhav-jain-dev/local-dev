@@ -14,4 +14,6 @@ ADD . ${repo}
 
 RUN go build -o /go/bin/worker ${repo}/main/worker
 
+ENV QUEUE_NAME=all
+
 CMD [ "/go/bin/worker" ]
