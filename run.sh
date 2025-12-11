@@ -126,18 +126,27 @@ is_port_busy() {
 # Cache the compose command to avoid repeated slow checks
 DOCKER_COMPOSE_CMD=""
 
+# Pre-detect docker compose command (call this before parallel operations)
+detect_docker_compose() {
+    if [ -n "$DOCKER_COMPOSE_CMD" ]; then
+        return 0
+    fi
+    # Use timeout to avoid hanging if Docker daemon is unresponsive
+    if command -v docker &>/dev/null && run_with_timeout 5 docker compose version &>/dev/null 2>&1; then
+        DOCKER_COMPOSE_CMD="docker compose"
+    elif command -v docker-compose &>/dev/null; then
+        DOCKER_COMPOSE_CMD="docker-compose"
+    else
+        echo "Error: Docker Compose not found. Please install Docker with Compose plugin." >&2
+        return 1
+    fi
+    export DOCKER_COMPOSE_CMD  # Export for subshells
+}
+
 docker_compose() {
     # Cache the docker compose command detection on first use
     if [ -z "$DOCKER_COMPOSE_CMD" ]; then
-        # Use timeout to avoid hanging if Docker daemon is unresponsive
-        if command -v docker &>/dev/null && run_with_timeout 5 docker compose version &>/dev/null 2>&1; then
-            DOCKER_COMPOSE_CMD="docker compose"
-        elif command -v docker-compose &>/dev/null; then
-            DOCKER_COMPOSE_CMD="docker-compose"
-        else
-            echo "Error: Docker Compose not found. Please install Docker with Compose plugin." >&2
-            return 1
-        fi
+        detect_docker_compose || return 1
     fi
     $DOCKER_COMPOSE_CMD "$@"
 }
@@ -527,9 +536,10 @@ live_build_monitor() {
     shift
     local services="$@"
 
-    echo -e "\n  ${CYAN}╔════════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "  ${CYAN}║${NC}              ${BOLD}Live Build Output${NC}  (auto-scrolling)              ${CYAN}║${NC}"
-    echo -e "  ${CYAN}╚════════════════════════════════════════════════════════════════╝${NC}\n"
+    # Output header to stderr so it displays (not captured by command substitution)
+    echo -e "\n  ${CYAN}╔════════════════════════════════════════════════════════════════╗${NC}" >&2
+    echo -e "  ${CYAN}║${NC}              ${BOLD}Live Build Output${NC}  (auto-scrolling)              ${CYAN}║${NC}" >&2
+    echo -e "  ${CYAN}╚════════════════════════════════════════════════════════════════╝${NC}\n" >&2
 
     # Start tail processes for each service
     local tail_pids=""
@@ -542,7 +552,7 @@ live_build_monitor() {
         tail_pids="$tail_pids $!"
     done
 
-    # Return the PIDs so they can be killed later
+    # Return the PIDs so they can be killed later (to stdout for capture)
     echo "$tail_pids"
 }
 
@@ -1761,9 +1771,20 @@ do_run() {
     fi
     echo -e "\r  ${GREEN}✓${NC} Docker is ready                  "
 
+    # Pre-detect docker compose command BEFORE parallel builds
+    # This prevents each subshell from re-detecting and potentially hanging
+    echo -ne "  ${DIM}Detecting Docker Compose...${NC}"
+    if ! detect_docker_compose; then
+        echo -e "\r  ${RED}✗${NC} Docker Compose not available"
+        return 1
+    fi
+    echo -e "\r  ${GREEN}✓${NC} Docker Compose ready ($DOCKER_COMPOSE_CMD)"
+
     # Capture build output to log file
     local build_start=$(now_ms)
     local build_log="${LOG_DIR}/build_output.log"
+
+    echo -e "  ${DIM}Launching parallel builds...${NC}"
 
     # Build each service individually in parallel to allow continuation when one fails
     # This prevents one failing build from cancelling others (default BuildKit behavior)
@@ -1776,6 +1797,13 @@ do_run() {
         all_services="$all_services $worker_name"
     done
 
+    # Safety check: ensure we have services to build
+    if [ -z "$all_services" ]; then
+        echo -e "  ${RED}✗${NC} No services to build"
+        return 1
+    fi
+    echo -e "  ${DIM}Services to build: ${NC}${BOLD}$all_services${NC}"
+
     # Start live log monitor if enabled
     local live_monitor_pids=""
     if [ "$LIVE_LOGS" = "true" ]; then
@@ -1786,14 +1814,20 @@ do_run() {
         live_monitor_pids=$(live_build_monitor "$build_tmp" $all_services)
     fi
 
+    # Re-export DOCKER_COMPOSE_CMD to ensure subshells can access it
+    export DOCKER_COMPOSE_CMD
+
     # Launch builds in parallel for each service
+    echo -e "  ${DIM}Starting build processes...${NC}"
     for svc in $all_services; do
         local build_eta=$(get_operation_avg "build:$svc")
         progress_start_operation "3" "$svc" "$build_eta"
         (
             local svc_log="${build_tmp}/${svc}.log"
-            docker_compose --progress=plain build "$svc" > "$svc_log" 2>&1
+            echo "[$(date '+%H:%M:%S')] Starting build for $svc" >> "$svc_log"
+            $DOCKER_COMPOSE_CMD --progress=plain build "$svc" >> "$svc_log" 2>&1
             local exit_code=$?
+            echo "[$(date '+%H:%M:%S')] Build finished for $svc with exit code: $exit_code" >> "$svc_log"
             # Check for actual Docker build failures (not npm/webpack warnings that contain "error")
             # - exit code non-zero = definite failure
             # - "failed to solve" = Docker BuildKit failure
