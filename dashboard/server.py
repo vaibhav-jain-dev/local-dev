@@ -21,6 +21,8 @@ CORS(app)
 BASE_DIR = Path(__file__).parent.parent
 LOGS_DIR = BASE_DIR / 'logs'
 CONFIG_FILE = BASE_DIR / 'repos_docker_files' / 'config.yaml'
+PROGRESS_FILE = LOGS_DIR / 'progress.json'
+METRICS_FILE = LOGS_DIR / 'run_metrics.json'
 
 # Global state for build progress
 build_state = {
@@ -89,14 +91,51 @@ def read_build_log(lines=200):
 
 def get_metrics():
     """Get run metrics from logs/run_metrics.json"""
-    metrics_file = LOGS_DIR / 'run_metrics.json'
     try:
-        if metrics_file.exists():
-            with open(metrics_file, 'r') as f:
+        if METRICS_FILE.exists():
+            with open(METRICS_FILE, 'r') as f:
                 return json.load(f)
     except:
         pass
     return {'runs': []}
+
+def get_progress():
+    """Get current build progress from logs/progress.json"""
+    try:
+        if PROGRESS_FILE.exists():
+            with open(PROGRESS_FILE, 'r') as f:
+                return json.load(f)
+    except:
+        pass
+    return {
+        'run_id': '',
+        'start_time': '',
+        'current_phase': 0,
+        'phases': {},
+        'services': [],
+        'namespace': '',
+        'completed': False
+    }
+
+def get_eta_for_operation(metrics, phase_name, op_name):
+    """Calculate ETA for an operation based on historical metrics"""
+    try:
+        runs = metrics.get('runs', [])[-30:]  # Last 30 runs
+        if not runs:
+            return 0
+
+        key = f"{phase_name}:{op_name}"
+        times = []
+        for run in runs:
+            ops = run.get('operations', {})
+            if key in ops:
+                times.append(ops[key])
+
+        if times:
+            return sum(times) // len(times)
+    except:
+        pass
+    return 0
 
 def parse_build_progress():
     """Parse build_output.log to determine current build state"""
@@ -202,6 +241,39 @@ def api_metrics():
     """Get performance metrics"""
     metrics = get_metrics()
     return jsonify(metrics)
+
+@app.route('/api/progress')
+def api_progress():
+    """Get current build progress"""
+    progress = get_progress()
+    return jsonify(progress)
+
+@app.route('/api/progress/stream')
+def stream_progress():
+    """Stream progress updates in real-time"""
+    def generate():
+        last_run_id = None
+        last_mtime = 0
+
+        while True:
+            try:
+                if PROGRESS_FILE.exists():
+                    current_mtime = PROGRESS_FILE.stat().st_mtime
+                    if current_mtime != last_mtime:
+                        progress = get_progress()
+                        # Check if this is a new run
+                        if progress.get('run_id') != last_run_id:
+                            last_run_id = progress.get('run_id')
+                            yield f"data: {json.dumps({'type': 'new_run', 'data': progress})}\n\n"
+                        else:
+                            yield f"data: {json.dumps({'type': 'update', 'data': progress})}\n\n"
+                        last_mtime = current_mtime
+            except Exception as e:
+                yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
+
+            time.sleep(0.3)  # Check every 300ms for responsive updates
+
+    return Response(generate(), mimetype='text/event-stream')
 
 @app.route('/api/logs/stream/<service_name>')
 def stream_logs(service_name):
