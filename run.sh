@@ -39,6 +39,7 @@ ACTION=""
 TARGET=""
 REFRESH="false"
 INCLUDE_APP="false"
+LIVE_LOGS="false"
 
 # ============================================
 # Utility Functions
@@ -335,6 +336,75 @@ log() {
         error) echo -e "  ${DIM}[$ts]${NC} ${RED}✗${NC} $msg" ;;
         step)  echo -e "  ${DIM}[$ts]${NC} ${CYAN}→${NC} $msg" ;;
     esac
+}
+
+# Service colors for live logs (cycle through colors)
+SERVICE_COLORS=("$RED" "$GREEN" "$YELLOW" "$CYAN" "$BLUE" "$MAGENTA")
+
+get_service_color() {
+    local service=$1
+    local hash=0
+    for (( i=0; i<${#service}; i++ )); do
+        hash=$(( (hash + $(printf '%d' "'${service:$i:1}")) % ${#SERVICE_COLORS[@]} ))
+    done
+    echo "${SERVICE_COLORS[$hash]}"
+}
+
+# Stream build output with colorized service prefix
+stream_build_log() {
+    local service=$1
+    local log_file=$2
+    local color=$(get_service_color "$service")
+    local prefix_width=20
+    local service_padded=$(printf "%-${prefix_width}s" "$service")
+
+    # Use tail -f to stream the log file, adding colorized prefix
+    tail -f "$log_file" 2>/dev/null | while IFS= read -r line; do
+        # Skip empty lines and some noisy docker output
+        if [ -n "$line" ] && ! echo "$line" | grep -qE "^\s*$|^#[0-9]+ \[internal\]"; then
+            # Truncate very long lines for readability
+            if [ ${#line} -gt 200 ]; then
+                line="${line:0:197}..."
+            fi
+            echo -e "${color}${service_padded}${NC} │ ${DIM}$line${NC}"
+        fi
+    done
+}
+
+# Live build monitor - streams logs from all builds in real-time
+live_build_monitor() {
+    local build_tmp=$1
+    shift
+    local services="$@"
+
+    echo -e "\n  ${CYAN}╔════════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "  ${CYAN}║${NC}              ${BOLD}Live Build Output${NC}  (auto-scrolling)              ${CYAN}║${NC}"
+    echo -e "  ${CYAN}╚════════════════════════════════════════════════════════════════╝${NC}\n"
+
+    # Start tail processes for each service
+    local tail_pids=""
+    for svc in $services; do
+        local svc_log="${build_tmp}/${svc}.log"
+        # Create log file if it doesn't exist
+        touch "$svc_log"
+        # Start streaming in background
+        stream_build_log "$svc" "$svc_log" &
+        tail_pids="$tail_pids $!"
+    done
+
+    # Return the PIDs so they can be killed later
+    echo "$tail_pids"
+}
+
+# Stop all live log streaming processes
+stop_live_monitor() {
+    local pids="$1"
+    for pid in $pids; do
+        kill $pid 2>/dev/null || true
+    done
+    # Small delay to ensure clean output
+    sleep 0.2
+    echo -e "\n  ${CYAN}════════════════════════════════════════════════════════════════${NC}\n"
 }
 
 # ============================================
@@ -899,13 +969,15 @@ parse_args() {
             ;;
     esac
 
-    # Check for refresh and --include-app flags (can be anywhere in args)
+    # Check for refresh, --include-app, and --live flags (can be anywhere in args)
     local remaining_args=""
     for arg in "$@"; do
         if [ "$arg" = "refresh" ]; then
             REFRESH="true"
         elif [ "$arg" = "--include-app" ]; then
             INCLUDE_APP="true"
+        elif [ "$arg" = "--live" ] || [ "$arg" = "-l" ]; then
+            LIVE_LOGS="true"
         else
             remaining_args="$remaining_args $arg"
         fi
@@ -1295,6 +1367,16 @@ do_run() {
         all_services="$all_services $worker_name"
     done
 
+    # Start live log monitor if enabled
+    local live_monitor_pids=""
+    if [ "$LIVE_LOGS" = "true" ]; then
+        # Create log files first
+        for svc in $all_services; do
+            touch "${build_tmp}/${svc}.log"
+        done
+        live_monitor_pids=$(live_build_monitor "$build_tmp" $all_services)
+    fi
+
     # Launch builds in parallel for each service
     for svc in $all_services; do
         (
@@ -1314,6 +1396,11 @@ do_run() {
     for pid in $build_pids; do
         wait $pid 2>/dev/null || true
     done
+
+    # Stop live log monitor
+    if [ "$LIVE_LOGS" = "true" ] && [ -n "$live_monitor_pids" ]; then
+        stop_live_monitor "$live_monitor_pids"
+    fi
 
     # Collect build results
     local build_succeeded=""

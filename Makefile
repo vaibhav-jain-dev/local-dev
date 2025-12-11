@@ -22,6 +22,7 @@ help:
 	@echo "Flags:"
 	@echo "  refresh        - Pull latest code from git before starting"
 	@echo "  --include-app  - Include Android emulator apps (patient-app, doctor-app)"
+	@echo "  --live / -l    - Show auto-scrolling live build logs"
 	@echo ""
 	@echo "Workers (auto-started with oms-api):"
 	@echo "  oms-worker, oms-worker-scheduler, oms-consumer-worker"
@@ -34,6 +35,7 @@ help:
 	@echo "  make run refresh s2                   - Start all, pull latest code"
 	@echo "  make run refresh s1 health-api        - Pull and start health-api"
 	@echo "  make run --include-app s1             - Start all with Android emulators"
+	@echo "  make run --live s1                    - Start with live scrolling logs"
 	@echo "  make restart                          - Restart all"
 	@echo "  make restart refresh                  - Restart with fresh pull"
 
@@ -56,7 +58,7 @@ stats:
 	@./run.sh --stats $(filter-out $@,$(MAKECMDGOALS))
 
 # Allow any target (namespaces, service names, flags)
-s1 s2 s3 s4 s5 qa auto refresh --include-app:
+s1 s2 s3 s4 s5 qa auto refresh --include-app --live -l:
 	@:
 
 health-api scheduler-api oms-api oms bifrost oms-web patient-app doctor-app:
