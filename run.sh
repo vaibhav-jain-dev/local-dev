@@ -1016,11 +1016,25 @@ setup_repository() {
     local dockerfile_path=$(get_dockerfile_path "$service")
     if [ -f "$dockerfile_path" ]; then
         cp "$dockerfile_path" "cloned/$dir_name/dev.Dockerfile"
-        echo -e "    └─ dockerfile ready ${GREEN}✓${NC}"
+        echo -e "    ├─ dockerfile ready ${GREEN}✓${NC}"
     else
-        echo -e "    └─ ${RED}✗ no Dockerfile at $dockerfile_path${NC}"
+        echo -e "    ├─ ${RED}✗ no Dockerfile at $dockerfile_path${NC}"
         return 1
     fi
+
+    # Copy debug configurations (VSCode and PyCharm) for IDE support
+    local debug_configs_copied=0
+    if [ -d "$config_folder/debug-configs/.vscode" ]; then
+        mkdir -p "cloned/$dir_name/.vscode"
+        cp -r "$config_folder/debug-configs/.vscode/"* "cloned/$dir_name/.vscode/" 2>/dev/null && debug_configs_copied=$((debug_configs_copied + 1))
+    fi
+    if [ -d "$config_folder/debug-configs/.idea" ]; then
+        mkdir -p "cloned/$dir_name/.idea/runConfigurations"
+        cp -r "$config_folder/debug-configs/.idea/"* "cloned/$dir_name/.idea/" 2>/dev/null && debug_configs_copied=$((debug_configs_copied + 1))
+    fi
+    [ "$debug_configs_copied" -gt 0 ] && echo -e "    ├─ debug configs ready ${GREEN}✓${NC}"
+
+    echo -e "    └─ setup complete ${GREEN}✓${NC}"
 
     end_operation "setup:$service"
     return 0
@@ -1244,6 +1258,8 @@ COMPOSE
 COMPOSE
         else
             # Python/Django services (default)
+            # Assign unique debug port for each service (5678 + offset)
+            local debug_port=$((5678 + ${#services_ready}))
             cat >> docker-compose.yml << COMPOSE
   ${service}:
     build:
@@ -1252,7 +1268,9 @@ COMPOSE
       args:
         PYTHON_CORE_UTILS_TOKEN: \${PYTHON_CORE_UTILS_TOKEN:-}
     container_name: ${service}
-    ports: ["${port}:${port}"]
+    ports:
+      - "${port}:${port}"
+      - "${debug_port}:5678"  # Python debugger port (debugpy)
     volumes:
       - ./cloned/${dir_name}/app:/app
       - ./cloned/${dir_name}:/workspace
@@ -1260,6 +1278,7 @@ COMPOSE
       PYTHONDONTWRITEBYTECODE: 1
       PYTHONUNBUFFERED: 1
       DJANGO_SETTINGS_MODULE: app.secrets
+      DEBUG_PORT: 5678
 COMPOSE
         fi
 
