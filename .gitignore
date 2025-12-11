@@ -12,6 +12,9 @@ cloned/*
 # Ignore docker-compose.yml in the root directory
 /docker-compose.yml
 
+# Dashboard virtual environment
+dashboard/venv/
+
 # IDE - PyCharm
 .idea/
 *.iml

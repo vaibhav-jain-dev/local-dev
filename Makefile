@@ -1,4 +1,4 @@
-.PHONY: help run restart stop clean logs stats
+.PHONY: help run restart stop clean logs stats dashboard
 
 # Valid namespaces
 VALID_NS := s1 s2 s3 s4 s5 qa auto
@@ -20,10 +20,11 @@ help:
 	@echo "Valid namespaces: s1, s2, s3, s4, s5, qa, auto"
 	@echo ""
 	@echo "Flags:"
-	@echo "  refresh        - Pull latest code from git before starting"
-	@echo "  --include-app  - Include Android emulator apps (patient-app, doctor-app)"
-	@echo "  --live / -l    - Show auto-scrolling live build logs"
-	@echo "  --local redis  - Use local Docker Redis instead of K8s port-forward"
+	@echo "  refresh           - Pull latest code from git before starting"
+	@echo "  --include-app     - Include Android emulator apps (patient-app, doctor-app)"
+	@echo "  --live / -l       - Show auto-scrolling live build logs"
+	@echo "  --dashboard / -d  - Launch web dashboard at http://localhost:9999"
+	@echo "  --local redis     - Use local Docker Redis instead of K8s port-forward"
 	@echo ""
 	@echo "Workers (auto-started with oms-api):"
 	@echo "  oms-worker, oms-worker-scheduler, oms-consumer-worker"
@@ -37,7 +38,9 @@ help:
 	@echo "  make run refresh s1 health-api        - Pull and start health-api"
 	@echo "  make run --include-app s1             - Start all with Android emulators"
 	@echo "  make run --live s1                    - Start with live scrolling logs"
+	@echo "  make run --dashboard s1               - Start with web dashboard UI"
 	@echo "  make run --local redis                - Start with local Docker Redis"
+	@echo "  make dashboard                        - Open dashboard only (no restart)"
 	@echo "  make restart                          - Restart all"
 	@echo "  make restart refresh                  - Restart with fresh pull"
 
@@ -59,8 +62,11 @@ logs:
 stats:
 	@./run.sh --stats $(filter-out $@,$(MAKECMDGOALS))
 
+dashboard:
+	@./run.sh --dashboard-only
+
 # Allow any target (namespaces, service names, flags)
-s1 s2 s3 s4 s5 qa auto refresh --include-app --live -l --local redis:
+s1 s2 s3 s4 s5 qa auto refresh --include-app --live -l --dashboard -d --ui --local redis:
 	@:
 
 health-api scheduler-api oms-api oms bifrost oms-web patient-app doctor-app:
