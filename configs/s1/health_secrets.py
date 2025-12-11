@@ -112,14 +112,14 @@ DATABASES = {
 CACHES = {
     'default': {
         'BACKEND': "django_redis.cache.RedisCache",
-        'LOCATION': 'redis://redis:6379/2',
+        'LOCATION': 'redis://localhost:6379/2',
         'OPTIONS': {
             'CLIENT_CLASS': 'django_redis.client.DefaultClient'
         }
     },
     "scheduler": {
         "BACKEND": "django_redis.cache.RedisCache",
-        "LOCATION": "redis://redis:6379/16",
+        "LOCATION": "redis://localhost:6379/16",
         "OPTIONS": {
             "CLIENT_CLASS": "django_redis.client.DefaultClient",
             "SERIALIZER": "django_redis.serializers.json.JSONSerializer",
@@ -362,7 +362,7 @@ SUBSCRIBE_EVENT_DETAILS = {
 SUBSCRIPTION_QUEUE_URL = (
     "https://sqs.ap-south-1.amazonaws.com/267224240039/s1-health-consumer"
 )
-PUBSUB_REDIS_LOCATION = "redis://redis:6379/32"
+PUBSUB_REDIS_LOCATION = "redis://localhost:6379/32"
 PUBSUB_REDIS_MAX_CONNECTIONS = 10
 SQS_CONSUMER_SLEEP_TIME = "5"
 AWS_SNS_SQS_REGION = "ap-south-1"

@@ -90,14 +90,14 @@ DATABASES = {
 CACHES = {
     'default': {
         'BACKEND': "django_redis.cache.RedisCache",
-        'LOCATION': "redis://redis:6379/16",
+        'LOCATION': "redis://localhost:6379/16",
         'OPTIONS': {
             'CLIENT_CLASS': 'django_redis.client.DefaultClient',
         }
     },
     'availability': {
         'BACKEND': "django_redis.cache.RedisCache",
-        'LOCATION': "redis://redis:6379/161",
+        'LOCATION': "redis://localhost:6379/161",
         'OPTIONS': {
             'CLIENT_CLASS': 'django_redis.client.DefaultClient'
         }
@@ -134,7 +134,7 @@ CELERY['BROKER_URL'] = "sqs://{access_key}:{secret_key}@{sqs_url}".format(
     sqs_url=SQS_URL,
 )
 # # Celery config
-CELERY['CELERY_RESULT_BACKEND'] = "redis://redis:6379/17"
+CELERY['CELERY_RESULT_BACKEND'] = "redis://localhost:6379/17"
 
 ##########################################################################
 
@@ -317,7 +317,7 @@ OCC_SERVICE = {
     'USER_EMAIL': 'scheduler-api@orangehealth.in'
 }
 
-PUBSUB_REDIS_LOCATION = 'redis://redis:6379/32'
+PUBSUB_REDIS_LOCATION = 'redis://localhost:6379/32'
 PUBSUB_REDIS_MAX_CONNECTIONS = 10
 SERVER_DOMAIN = 's2'
 EMEDIC_ATTENDANCE_CONFIG = {

@@ -560,13 +560,13 @@ pre_payment_feature_flags:
 public_api_url: https://s1-oms-api.orangehealth.dev
 recent_booked_search_frequency: 30
 redis:
-  address: redis:6379
+  address: localhost:6379
   db: 4
   minidle: 5
   password: ''
   poolsize: 10
   pubsub:
-    address: redis:6379
+    address: localhost:6379
     db: 32
     minidle: 1
     password: ''
@@ -668,7 +668,7 @@ scheduler_api:
   incoming_api_key: iasKTEcYuqv0JnNM06utdNH3
   timeout_seconds: 10
   redis:
-    address: redis:6379
+    address: localhost:6379
     db: 16
     minidle: 5
     password: ''
@@ -799,7 +799,7 @@ worker:
   processes: 10
   redis_max_idle: 10
   redis_pool_size: 20
-  result_backend: redis://redis:6379/70
+  result_backend: redis://localhost:6379/70
   partner_recommendation_batch_size: 100
   tasks:
     check_order_dedup:
