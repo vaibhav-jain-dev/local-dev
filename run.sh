@@ -857,10 +857,14 @@ setup_repository() {
         local clone_success=false
         local clone_error=""
         for attempt in 1 2 3; do
-            clone_error=$(git clone "$repo" "cloned/$dir_name" 2>&1)
-            if [ $? -eq 0 ]; then
+            # Add 60s timeout to git clone to prevent hanging
+            clone_error=$(timeout 60 git clone "$repo" "cloned/$dir_name" 2>&1)
+            local clone_exit=$?
+            if [ $clone_exit -eq 0 ]; then
                 clone_success=true
                 break
+            elif [ $clone_exit -eq 124 ]; then
+                clone_error="Git clone timed out after 60s - check network/SSH keys"
             fi
             [ $attempt -lt 3 ] && echo -n " retry $((attempt+1))..."
             sleep $((RANDOM % 3 + 1))
@@ -1544,6 +1548,23 @@ do_restart() {
 }
 
 do_run() {
+    # Early Docker check - fail fast if Docker isn't available
+    echo -e "${YELLOW}Checking Docker availability...${NC}"
+    if ! command -v docker &>/dev/null; then
+        echo -e "${RED}✗ Docker is not installed${NC}"
+        echo -e "${YELLOW}Please install Docker Desktop from: https://www.docker.com/products/docker-desktop${NC}"
+        exit 1
+    fi
+
+    # Quick Docker daemon check with short timeout
+    if ! timeout 5 docker info &>/dev/null 2>&1; then
+        echo -e "${RED}✗ Docker daemon is not running${NC}"
+        echo -e "${YELLOW}Please start Docker Desktop and try again${NC}"
+        exit 1
+    fi
+    echo -e "${GREEN}✓${NC} Docker is ready"
+    echo ""
+
     local config_folder=$(get_config_folder)
 
     # Initialize metrics tracking
