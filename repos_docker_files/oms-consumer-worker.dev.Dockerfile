@@ -16,7 +16,5 @@ RUN go build -o /go/bin/consumer ${repo}/main/consumer
 
 ENV QUEUE_NAME=all
 
-# Use sh -c to chmod at runtime (volume mount overwrites build-time chmod)
-ENTRYPOINT [ "sh", "-c", "chmod +x ./docker-entrypoint.sh && exec ./docker-entrypoint.sh \"$@\"", "--" ]
-
-CMD [ "/go/bin/consumer" ]
+# No entrypoint, container directly starts the Go binary
+CMD ["/go/bin/consumer"]
