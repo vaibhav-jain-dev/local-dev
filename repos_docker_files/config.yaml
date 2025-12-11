@@ -3,7 +3,7 @@
 #   enabled: true/false - whether to include in 'make run'
 #   always-refresh: true - always pull latest (even without 'refresh' flag)
 #   git_repo, git_branch, port, configs - standard settings
-
+#
 services:
   health-api:
     enabled: true
@@ -50,41 +50,45 @@ services:
       oms-consumer-worker:
         dockerfile: oms-consumer-worker.dev.Dockerfile
 
-  # Frontend Services
-  bifrost:
-    enabled: true
-    git_repo: git@github.com:Orange-Health/bifrost.git
-    git_branch: master
-    port: 3000
-    type: nextjs
-    configs:
-      - source: configs/bifrost.env.development
-        dest: .env.development
-        required: true
+# Client Applications (Web and Android)
+# Separated from backend services to avoid localhost endpoint conflicts
+clients:
+  # Web Clients - uses separate docker-compose-web.yml
+  web:
+    bifrost:
+      enabled: true
+      git_repo: git@github.com:Orange-Health/bifrost.git
+      git_branch: master
+      port: 3000
+      type: nextjs
+      configs:
+        - source: configs/bifrost.env.development
+          dest: .env.development
+          required: true
 
-  oms-web:
-    enabled: true
-    git_repo: git@github.com:Orange-Health/oms-web.git
-    git_branch: master
-    port: 8182
-    type: nodejs
-    configs:
-      - source: configs/oms-web.config.js
-        dest: config/config.js
-        required: true
+    oms-web:
+      enabled: true
+      git_repo: git@github.com:Orange-Health/oms-web.git
+      git_branch: master
+      port: 8182
+      type: nodejs
+      configs:
+        - source: configs/oms-web.config.js
+          dest: config/config.js
+          required: true
 
-# Emulator Apps - run bash scripts instead of Docker containers
-# These are only included when --include-app flag is passed
-emulators:
-  patient-app:
-    git_repo: git@github.com:Orange-Health/patient-app.git
-    git_branch: copilot/add-dockerized-android-emulator
-    script: run-android-emulator.sh
+  # Android Clients - run bash scripts instead of Docker containers
+  # These are only included when --include-app flag is passed
+  android:
+    patient-app:
+      git_repo: git@github.com:Orange-Health/patient-app.git
+      git_branch: copilot/add-dockerized-android-emulator
+      script: run-android-emulator.sh
 
-  doctor-app:
-    git_repo: git@github.com:Orange-Health/doctor-app.git
-    git_branch: copilot/add-dockerized-android-emulator-script
-    script: run-android-emulator.sh
+    doctor-app:
+      git_repo: git@github.com:Orange-Health/doctor-app.git
+      git_branch: copilot/add-dockerized-android-emulator-script
+      script: run-android-emulator.sh
 
 redis:
   namespace: s5
