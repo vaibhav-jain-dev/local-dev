@@ -1276,9 +1276,10 @@ do_run() {
     local build_log="${LOG_DIR}/build_output.log"
 
     # BuildKit handles parallelism automatically, --parallel is for docker-compose v1 compatibility
-    # Use --progress=tty for service-wise box display in terminal (auto-scrolling panels per service)
+    # --progress is a global compose flag and must come BEFORE the build subcommand
+    # Use --progress=plain since output is piped to tee for logging (tty mode requires direct terminal)
     # Run build and capture output - show progress in real-time
-    docker_compose build --parallel --progress=tty 2>&1 | tee "$build_log"
+    docker_compose --progress=plain build --parallel 2>&1 | tee "$build_log"
 
     # Get pipeline exit status (use PIPESTATUS on bash, check log on other shells)
     local build_status=0
