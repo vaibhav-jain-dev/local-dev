@@ -857,8 +857,8 @@ setup_repository() {
         local clone_success=false
         local clone_error=""
         for attempt in 1 2 3; do
-            # Add 60s timeout to git clone to prevent hanging
-            clone_error=$(timeout 60 git clone "$repo" "cloned/$dir_name" 2>&1)
+            # Add 60s timeout to git clone to prevent hanging (macOS compatible)
+            clone_error=$(run_with_timeout 60 git clone "$repo" "cloned/$dir_name" 2>&1)
             local clone_exit=$?
             if [ $clone_exit -eq 0 ]; then
                 clone_success=true
@@ -1556,10 +1556,11 @@ do_run() {
         exit 1
     fi
 
-    # Quick Docker daemon check with short timeout
-    if ! timeout 5 docker info &>/dev/null 2>&1; then
+    # Quick Docker daemon check with short timeout (using custom run_with_timeout for macOS compatibility)
+    if ! run_with_timeout 5 docker info &>/dev/null 2>&1; then
         echo -e "${RED}✗ Docker daemon is not running${NC}"
         echo -e "${YELLOW}Please start Docker Desktop and try again${NC}"
+        echo -e "${DIM}Tip: Check if Docker Desktop is fully started (not just opened)${NC}"
         exit 1
     fi
     echo -e "${GREEN}✓${NC} Docker is ready"
