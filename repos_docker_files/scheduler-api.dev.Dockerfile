@@ -26,6 +26,12 @@ RUN sed -i 's|http://deb.debian.org/debian|http://archive.debian.org/debian|g' /
 
 COPY ./requirements /requirements
 
+# Add python-core-utils from Orange Health private GitHub repo
+ARG PYTHON_CORE_UTILS_TOKEN
+ARG PYTHON_CORE_UTILS_VERSION=v1.1.1#egg=python-core-utils
+RUN sed -i -e '$a\\' /requirements/common.txt \
+    && echo "git+https://${PYTHON_CORE_UTILS_TOKEN}:x-oauth-basic@github.com/Orange-Health/python-core-utils.git@${PYTHON_CORE_UTILS_VERSION}" >> /requirements/common.txt
+
 # Remove conflicting packages from dev.txt before installing
 RUN grep -v -E "^PyYAML==|^wrapt==" /requirements/dev.txt > /requirements/dev_fixed.txt && \
     pip install -r /requirements/dev_fixed.txt
