@@ -1265,7 +1265,6 @@ COMPOSE
 
         cat >> docker-compose.yml << COMPOSE
     networks: [oh-network]
-    platform: linux/amd64
     restart: unless-stopped
     stdin_open: true
     tty: true
@@ -1300,7 +1299,6 @@ COMPOSE
       CGO_ENABLED: 1
       GO111MODULE: on
     networks: [oh-network]
-    platform: linux/amd64
     restart: unless-stopped
     stdin_open: true
     tty: true
@@ -1357,7 +1355,6 @@ COMPOSE
       NEXT_TELEMETRY_DISABLED: 1
       WATCHPACK_POLLING: 'true'
     network_mode: host
-    platform: linux/amd64
     restart: unless-stopped
     stdin_open: true
     tty: true
@@ -1380,7 +1377,6 @@ COMPOSE
       NODE_ENV: development
       PORT: ${port}
     network_mode: host
-    platform: linux/amd64
     restart: unless-stopped
     stdin_open: true
     tty: true
