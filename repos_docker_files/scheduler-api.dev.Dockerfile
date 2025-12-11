@@ -27,8 +27,8 @@ RUN sed -i 's|http://deb.debian.org/debian|http://archive.debian.org/debian|g' /
 COPY ./requirements /requirements
 
 # GitHub token for private repo access (classic PAT with repo scope)
-ARG PYTHON_CORE_UTILS_TOKEN2
-
+ARG PYTHON_CORE_UTILS_TOKEN
+RUN echo "Using PYTHON_CORE_UTILS_TOKEN: ${PYTHON_CORE_UTILS_TOKEN:+***}"
 # Add python-core-utils from Orange Health private GitHub repo
 ARG PYTHON_CORE_UTILS_VERSION=v1.1.1#egg=python-core-utils
 RUN pip install git+https://x-access-token:${PYTHON_CORE_UTILS_TOKEN}@github.com/Orange-Health/python-core-utils.git@${PYTHON_CORE_UTILS_VERSION}
