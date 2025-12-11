@@ -784,6 +784,7 @@ COMPOSE
       dockerfile: dev.Dockerfile
       args:
         GITHUB_TOKEN: \${GITHUB_TOKEN:-}
+        PYTHON_CORE_UTILS_TOKEN: \${PYTHON_CORE_UTILS_TOKEN:-}
     container_name: ${service}
     ports: ["${port}:${port}"]
     volumes:
@@ -1260,6 +1261,14 @@ do_run() {
         else
             echo -e "  ${GREEN}✓${NC} GITHUB_TOKEN is set"
             export GITHUB_TOKEN
+        fi
+        # Check for PYTHON_CORE_UTILS_TOKEN (needed for python-core-utils package)
+        if [ -z "${PYTHON_CORE_UTILS_TOKEN:-}" ]; then
+            echo -e "  ${YELLOW}⚠${NC} PYTHON_CORE_UTILS_TOKEN not set - python-core-utils may not install"
+            echo -e "    ${DIM}To fix: export PYTHON_CORE_UTILS_TOKEN=\"ghp_your_token_here\"${NC}"
+        else
+            echo -e "  ${GREEN}✓${NC} PYTHON_CORE_UTILS_TOKEN is set"
+            export PYTHON_CORE_UTILS_TOKEN
         fi
     fi
 
