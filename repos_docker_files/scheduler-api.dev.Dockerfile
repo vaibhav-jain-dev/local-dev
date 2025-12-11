@@ -26,26 +26,26 @@ RUN sed -i 's|http://deb.debian.org/debian|http://archive.debian.org/debian|g' /
 
 COPY ./requirements /requirements
 
+# GitHub token for private repo access (classic PAT with repo scope)
+ARG PYTHON_CORE_UTILS_TOKEN2
+
 # Add python-core-utils from Orange Health private GitHub repo
-ARG PYTHON_CORE_UTILS_TOKEN
 ARG PYTHON_CORE_UTILS_VERSION=v1.1.1#egg=python-core-utils
 RUN sed -i -e '$a\\' /requirements/common.txt \
-    && echo "git+https://${PYTHON_CORE_UTILS_TOKEN}:x-oauth-basic@github.com/Orange-Health/python-core-utils.git@${PYTHON_CORE_UTILS_VERSION}" >> /requirements/common.txt
+    && echo "git+https://x-access-token:${PYTHON_CORE_UTILS_TOKEN2}@github.com/Orange-Health/python-core-utils.git@${PYTHON_CORE_UTILS_VERSION}" >> /requirements/common.txt
 
 # Remove conflicting packages from dev.txt before installing
 RUN grep -v -E "^PyYAML==|^wrapt==" /requirements/dev.txt > /requirements/dev_fixed.txt && \
     pip install -r /requirements/dev_fixed.txt
 
 # Install error_framework from Orange Health private GitHub repo
-# Requires GITHUB_TOKEN build arg for authentication
-# Using x-oauth-basic format to prevent git from prompting for password in non-interactive mode
-ARG GITHUB_TOKEN
+# Using x-access-token format (token as password) for GitHub PAT authentication
 RUN git config --global credential.helper '' && \
-    if [ -n "$GITHUB_TOKEN" ]; then \
-        pip install git+https://${GITHUB_TOKEN}:x-oauth-basic@github.com/Orange-Health/error-framework.git@master || \
-        pip install git+https://${GITHUB_TOKEN}:x-oauth-basic@github.com/Orange-Health/error_framework.git@master; \
+    if [ -n "$PYTHON_CORE_UTILS_TOKEN2" ]; then \
+        pip install git+https://x-access-token:${PYTHON_CORE_UTILS_TOKEN2}@github.com/Orange-Health/error-framework.git@master || \
+        pip install git+https://x-access-token:${PYTHON_CORE_UTILS_TOKEN2}@github.com/Orange-Health/error_framework.git@master; \
     else \
-        echo "Warning: GITHUB_TOKEN not set - error_framework not installed"; \
+        echo "Warning: PYTHON_CORE_UTILS_TOKEN2 not set - error_framework not installed"; \
     fi
 
 RUN mkdir /app
