@@ -1678,9 +1678,47 @@ do_run() {
     export COMPOSE_BAKE=true
 
     # Verify Docker is responsive before starting parallel builds
+    # Use retry logic since Docker can be slow to respond, especially on macOS
     echo -ne "  ${DIM}Checking Docker availability...${NC}"
-    if ! timeout 10 docker info &>/dev/null; then
-        echo -e "\r  ${RED}✗${NC} Docker is not responding. Please ensure Docker Desktop is running."
+    local docker_ready=false
+    local docker_attempts=0
+    local docker_max_attempts=5
+
+    while [ $docker_attempts -lt $docker_max_attempts ]; do
+        docker_attempts=$((docker_attempts + 1))
+
+        # First check if docker command exists
+        if ! command -v docker &>/dev/null; then
+            echo -e "\r  ${RED}✗${NC} Docker command not found. Please install Docker."
+            return 1
+        fi
+
+        # Try docker info with a generous timeout (30s per attempt)
+        if timeout 30 docker info &>/dev/null 2>&1; then
+            docker_ready=true
+            break
+        fi
+
+        # Show retry status
+        if [ $docker_attempts -lt $docker_max_attempts ]; then
+            echo -ne "\r  ${DIM}Checking Docker availability... (attempt $docker_attempts/$docker_max_attempts)${NC}"
+            sleep 2
+        fi
+    done
+
+    if [ "$docker_ready" = false ]; then
+        echo -e "\r  ${RED}✗${NC} Docker is not responding after $docker_max_attempts attempts."
+        echo -e "    ${DIM}Please ensure Docker Desktop is running and fully started.${NC}"
+        echo -e "    ${DIM}Diagnostics:${NC}"
+        # Show what's happening with docker
+        echo -ne "    ${DIM}Docker socket: ${NC}"
+        if [ -S /var/run/docker.sock ]; then
+            echo -e "${GREEN}exists${NC}"
+        elif [ -S "$HOME/.docker/run/docker.sock" ]; then
+            echo -e "${GREEN}exists (user socket)${NC}"
+        else
+            echo -e "${RED}not found${NC}"
+        fi
         echo -e "    ${DIM}Try: 'docker info' to diagnose${NC}"
         return 1
     fi
