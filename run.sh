@@ -1179,7 +1179,7 @@ COMPOSE
       context: ./cloned/${dir_name}
       dockerfile: dev.Dockerfile
       args:
-        PYTHON_CORE_UTILS_TOKEN2: \${PYTHON_CORE_UTILS_TOKEN2:-}
+        PYTHON_CORE_UTILS_TOKEN: \${PYTHON_CORE_UTILS_TOKEN:-}
     container_name: ${service}
     ports: ["${port}:${port}"]
     volumes:
@@ -1705,14 +1705,14 @@ do_run() {
         fi
     fi
 
-    # Check for PYTHON_CORE_UTILS_TOKEN2 (needed for private repos: python-core-utils, error_framework)
+    # Check for PYTHON_CORE_UTILS_TOKEN (needed for private repos: python-core-utils, error_framework)
     if [ "$has_python_service" = true ]; then
-        if [ -z "${PYTHON_CORE_UTILS_TOKEN2:-}" ]; then
-            echo -e "  ${YELLOW}⚠${NC} PYTHON_CORE_UTILS_TOKEN2 not set - private packages may not install"
-            echo -e "    ${DIM}To fix: export PYTHON_CORE_UTILS_TOKEN2=\"ghp_your_classic_token_here\"${NC}"
+        if [ -z "${PYTHON_CORE_UTILS_TOKEN:-}" ]; then
+            echo -e "  ${YELLOW}⚠${NC} PYTHON_CORE_UTILS_TOKEN not set - private packages may not install"
+            echo -e "    ${DIM}To fix: export PYTHON_CORE_UTILS_TOKEN=\"ghp_your_classic_token_here\"${NC}"
         else
-            echo -e "  ${GREEN}✓${NC} PYTHON_CORE_UTILS_TOKEN2 is set"
-            export PYTHON_CORE_UTILS_TOKEN2
+            echo -e "  ${GREEN}✓${NC} PYTHON_CORE_UTILS_TOKEN is set"
+            export PYTHON_CORE_UTILS_TOKEN
         fi
     fi
 
