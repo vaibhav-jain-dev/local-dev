@@ -38,10 +38,12 @@ RUN grep -v -E "^PyYAML==|^wrapt==" /requirements/dev.txt > /requirements/dev_fi
 
 # Install error_framework from Orange Health private GitHub repo
 # Requires GITHUB_TOKEN build arg for authentication
+# Using x-oauth-basic format to prevent git from prompting for password in non-interactive mode
 ARG GITHUB_TOKEN
-RUN if [ -n "$GITHUB_TOKEN" ]; then \
-        pip install git+https://${GITHUB_TOKEN}@github.com/Orange-Health/error-framework.git@master || \
-        pip install git+https://${GITHUB_TOKEN}@github.com/Orange-Health/error_framework.git@master; \
+RUN git config --global credential.helper '' && \
+    if [ -n "$GITHUB_TOKEN" ]; then \
+        pip install git+https://${GITHUB_TOKEN}:x-oauth-basic@github.com/Orange-Health/error-framework.git@master || \
+        pip install git+https://${GITHUB_TOKEN}:x-oauth-basic@github.com/Orange-Health/error_framework.git@master; \
     else \
         echo "Warning: GITHUB_TOKEN not set - error_framework not installed"; \
     fi
