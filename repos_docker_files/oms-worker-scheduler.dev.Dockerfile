@@ -6,15 +6,17 @@ WORKDIR ${repo}
 
 RUN apk add --no-cache build-base imagemagick-dev imagemagick tzdata ca-certificates aws-cli imagemagick-jpeg imagemagick-tiff
 
+# Install Air for hot reload
+RUN go install github.com/cosmtrek/air@v1.27.3
+
 COPY go.mod ${repo}
 COPY go.sum ${repo}
 RUN go mod download
 
 ADD . ${repo}
 
-RUN go build -o /go/bin/scheduler ${repo}/main/scheduler
-
 ENV QUEUE_NAME=all
 
-# No entrypoint script, run scheduler directly
-CMD ["/go/bin/scheduler"]
+# Run with Air for hot reload instead of pre-compiled binary
+# Air will watch for file changes and automatically rebuild/restart the scheduler
+CMD ["air", "-c", ".air.toml"]

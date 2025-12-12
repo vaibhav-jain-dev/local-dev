@@ -17,7 +17,8 @@ COPY . .
 # Expose application port and debug port
 EXPOSE 8080 2345
 
-# Run with go run (use Air for hot reload if needed)
+# Run with Air for hot reload
+# Air will watch for file changes and automatically rebuild/restart the app
 # To debug, attach debugger to port 2345
-CMD ["go", "run", "main.go"]
+CMD ["air", "-c", ".air.toml"]
 

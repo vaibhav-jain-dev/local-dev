@@ -12,5 +12,7 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 EXPOSE 8080
-CMD ["go", "run", "main.go"]
+# Run with Air for hot reload
+# Air will watch for file changes and automatically rebuild/restart the app
+CMD ["air", "-c", ".air.toml"]
 

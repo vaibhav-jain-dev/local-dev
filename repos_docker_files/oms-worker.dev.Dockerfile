@@ -6,14 +6,17 @@ WORKDIR ${repo}
 
 RUN apk add --no-cache build-base imagemagick-dev imagemagick tzdata ca-certificates aws-cli imagemagick-jpeg imagemagick-tiff
 
+# Install Air for hot reload
+RUN go install github.com/cosmtrek/air@v1.27.3
+
 COPY go.mod ${repo}
 COPY go.sum ${repo}
 RUN go mod download
 
 ADD . ${repo}
 
-RUN go build -o /go/bin/worker ${repo}/main/worker
-
 ENV QUEUE_NAME=all
 
-CMD [ "/go/bin/worker" ]
+# Run with Air for hot reload instead of pre-compiled binary
+# Air will watch for file changes and automatically rebuild/restart the worker
+CMD ["air", "-c", ".air.toml"]
