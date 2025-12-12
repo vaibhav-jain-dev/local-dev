@@ -33,11 +33,16 @@ RUN grep -v -E "^PyYAML==|^wrapt==" /requirements/dev.txt > /requirements/dev_fi
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install -r /requirements/dev_fixed.txt
 
-# Add python-core-utils from Orange Health private GitHub repo
+# Add python-core-utils from Orange Health private GitHub repo (if token provided)
 ARG PYTHON_CORE_UTILS_VERSION=v1.1.1#egg=python-core-utils
 ARG PYTHON_CORE_UTILS_TOKEN
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install git+https://x-access-token:${PYTHON_CORE_UTILS_TOKEN}@github.com/Orange-Health/python-core-utils.git@${PYTHON_CORE_UTILS_VERSION}
+    if [ -n "$PYTHON_CORE_UTILS_TOKEN" ]; then \
+        echo "Installing python-core-utils from private repo..."; \
+        pip install git+https://x-access-token:${PYTHON_CORE_UTILS_TOKEN}@github.com/Orange-Health/python-core-utils.git@${PYTHON_CORE_UTILS_VERSION}; \
+    else \
+        echo "WARNING: PYTHON_CORE_UTILS_TOKEN not set - skipping python-core-utils installation"; \
+    fi
 
 # Install debugpy for remote debugging (before copying app for better caching)
 RUN --mount=type=cache,target=/root/.cache/pip \

@@ -27,8 +27,14 @@ ARG PYTHON_CORE_UTILS_TOKEN
 ARG PYTHON_CORE_UTILS_VERSION=v1.1.1#egg=python-core-utils
 COPY ./requirements /requirements
 
-RUN sed -i -e '$a\\' /requirements/common.txt \
-    && echo "git+https://${PYTHON_CORE_UTILS_TOKEN}:x-oauth-basic@github.com/Orange-Health/python-core-utils.git@${PYTHON_CORE_UTILS_VERSION}" >> /requirements/common.txt
+# Add python-core-utils to requirements if token is provided
+RUN sed -i -e '$a\\' /requirements/common.txt && \
+    if [ -n "$PYTHON_CORE_UTILS_TOKEN" ]; then \
+        echo "Adding python-core-utils to requirements..."; \
+        echo "git+https://${PYTHON_CORE_UTILS_TOKEN}:x-oauth-basic@github.com/Orange-Health/python-core-utils.git@${PYTHON_CORE_UTILS_VERSION}" >> /requirements/common.txt; \
+    else \
+        echo "WARNING: PYTHON_CORE_UTILS_TOKEN not set - skipping python-core-utils"; \
+    fi
 
 # Remove conflicting packages from dev.txt before installing
 RUN grep -v -E "^PyYAML==|^wrapt==" /requirements/dev.txt > /requirements/dev_fixed.txt
