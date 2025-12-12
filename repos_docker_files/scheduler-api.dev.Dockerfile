@@ -25,6 +25,7 @@ RUN  apt-get update && \
 # GitHub token for private repo access (classic PAT with repo scope)
 ARG PYTHON_CORE_UTILS_TOKEN
 ARG PYTHON_CORE_UTILS_VERSION=v1.1.1#egg=python-core-utils
+COPY ./requirements /requirements
 
 RUN sed -i -e '$a\\' /requirements/common.txt \
     && echo "git+https://${PYTHON_CORE_UTILS_TOKEN}:x-oauth-basic@github.com/Orange-Health/python-core-utils.git@${PYTHON_CORE_UTILS_VERSION}" >> /requirements/common.txt
@@ -34,8 +35,8 @@ RUN grep -v -E "^PyYAML==|^wrapt==" /requirements/dev.txt > /requirements/dev_fi
     pip install -r /requirements/dev_fixed.txt
 
 RUN pip install --upgrade pip setuptools wheel && \
-  pip install --no-cache-dir -r /requirements.txt
-
+  pip install --no-cache-dir -r /requirements/dev_fixed.txt
+  
 RUN mkdir /app
 WORKDIR /app
 COPY ./app /app
