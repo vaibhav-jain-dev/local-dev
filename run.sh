@@ -649,6 +649,9 @@ start_dashboard() {
         touch "$dashboard_dir/venv/.deps_installed"
     fi
 
+    # Ensure logs directory exists
+    mkdir -p "$LOG_DIR"
+
     # Start dashboard in background
     (
         cd "$dashboard_dir"
