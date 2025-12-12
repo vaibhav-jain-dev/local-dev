@@ -652,15 +652,19 @@ start_dashboard() {
     # Ensure logs directory exists
     mkdir -p "$LOG_DIR"
 
+    # Store absolute paths before changing directory
+    local log_file="${SCRIPT_DIR}/${LOG_DIR}/dashboard.log"
+    local pid_file="${SCRIPT_DIR}/${LOG_DIR}/dashboard.pid"
+
     # Start dashboard in background
     (
         cd "$dashboard_dir"
         source venv/bin/activate
-        python3 server.py > "$LOG_DIR/dashboard.log" 2>&1
+        python3 server.py > "$log_file" 2>&1
     ) &
 
     DASHBOARD_PID=$!
-    echo $DASHBOARD_PID > "$LOG_DIR/dashboard.pid"
+    echo $DASHBOARD_PID > "$pid_file"
 
     # Wait for server to start
     sleep 2
