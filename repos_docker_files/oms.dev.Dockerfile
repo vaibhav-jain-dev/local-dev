@@ -2,16 +2,22 @@ FROM golang:1.22.3-alpine
 ENV repo /go/src/github.com/Orange-Health/oms
 WORKDIR ${repo}
 RUN apk add --no-cache build-base imagemagick-dev imagemagick tzdata \
-    ca-certificates aws-cli imagemagick-jpeg imagemagick-tiff
+    ca-certificates aws-cli imagemagick-jpeg imagemagick-tiff wget
 
-# Install Air for hot reload and Delve for debugging
-RUN go install github.com/cosmtrek/air@v1.27.3
-RUN go install github.com/go-delve/delve/cmd/dlv@latest
+# Install Air for hot reload and Delve for debugging (cached layer)
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    go install github.com/cosmtrek/air@v1.27.3 && \
+    go install github.com/go-delve/delve/cmd/dlv@latest
 
-ADD https://github.com/amacneil/dbmate/releases/latest/download/dbmate-linux-amd64 /usr/local/bin/dbmate
-RUN chmod +x /usr/local/bin/dbmate
+# Download dbmate in a separate cached layer
+ARG TARGETARCH
+RUN ARCH=$(echo ${TARGETARCH:-amd64} | sed 's/x86_64/amd64/g' | sed 's/aarch64/arm64/g') && \
+    wget -O /usr/local/bin/dbmate https://github.com/amacneil/dbmate/releases/download/v2.11.0/dbmate-linux-${ARCH} && \
+    chmod +x /usr/local/bin/dbmate
+
 COPY go.mod go.sum ./
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
 COPY . .
 
 # Expose application port and debug port

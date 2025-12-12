@@ -31,18 +31,20 @@ RUN sed -i -e '$a\\' /requirements/common.txt \
     && echo "git+https://${PYTHON_CORE_UTILS_TOKEN}:x-oauth-basic@github.com/Orange-Health/python-core-utils.git@${PYTHON_CORE_UTILS_VERSION}" >> /requirements/common.txt
 
 # Remove conflicting packages from dev.txt before installing
-RUN grep -v -E "^PyYAML==|^wrapt==" /requirements/dev.txt > /requirements/dev_fixed.txt && \
+RUN grep -v -E "^PyYAML==|^wrapt==" /requirements/dev.txt > /requirements/dev_fixed.txt
+
+# Install dependencies with cache mount for faster builds
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --upgrade pip setuptools wheel && \
     pip install -r /requirements/dev_fixed.txt
 
-RUN pip install --upgrade pip setuptools wheel && \
-  pip install --no-cache-dir -r /requirements/dev_fixed.txt
-  
+# Install debugpy for remote debugging (before copying app for better caching)
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install debugpy
+
 RUN mkdir /app
 WORKDIR /app
 COPY ./app /app
-
-# Install debugpy for remote debugging
-RUN pip install debugpy
 
 # Expose debug port
 EXPOSE 5678

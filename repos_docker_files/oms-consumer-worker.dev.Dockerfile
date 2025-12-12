@@ -8,11 +8,13 @@ RUN apk add --no-cache build-base imagemagick-dev imagemagick tzdata ca-certific
 
 COPY go.mod ${repo}
 COPY go.sum ${repo}
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
 
 ADD . ${repo}
 
-RUN go build -o /go/bin/consumer ${repo}/main/consumer
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    go build -o /go/bin/consumer ${repo}/main/consumer
 
 ENV QUEUE_NAME=all
 

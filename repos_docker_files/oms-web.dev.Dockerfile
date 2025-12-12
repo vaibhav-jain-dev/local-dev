@@ -30,11 +30,13 @@ RUN if [ -n "$GITHUB_NPM_TOKEN" ]; then \
         echo "WARNING: GITHUB_NPM_TOKEN not set - private @orange-health packages may fail to install"; \
     fi
 
-# Install dependencies - try yarn first, then npm
+# Install dependencies with cache mounts for faster builds
 # Using separate RUN to get better error visibility
 # Note: Using --legacy-peer-deps for npm to handle peer dependency conflicts
 # (e.g., eslint-plugin-prettier@4.2.1 with eslint@9.x)
-RUN echo "=== Package files in container ===" && ls -la && \
+RUN --mount=type=cache,target=/root/.npm \
+    --mount=type=cache,target=/usr/local/share/.cache/yarn \
+    echo "=== Package files in container ===" && ls -la && \
     if [ -f yarn.lock ]; then \
         echo "=== Installing with yarn ===" && \
         yarn install || exit 1; \
