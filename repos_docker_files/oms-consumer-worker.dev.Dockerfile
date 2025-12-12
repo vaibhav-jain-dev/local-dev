@@ -11,7 +11,7 @@ RUN go install github.com/cosmtrek/air@v1.27.3
 
 COPY go.mod ${repo}
 COPY go.sum ${repo}
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
 
 ADD . ${repo}
 

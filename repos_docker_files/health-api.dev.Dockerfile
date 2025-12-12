@@ -27,21 +27,26 @@ RUN sed -i 's|http://deb.debian.org/debian|http://archive.debian.org/debian|g' /
 COPY ./requirements /requirements
 
 # Remove conflicting packages from dev.txt before installing
-RUN grep -v -E "^PyYAML==|^wrapt==" /requirements/dev.txt > /requirements/dev_fixed.txt && \
+RUN grep -v -E "^PyYAML==|^wrapt==" /requirements/dev.txt > /requirements/dev_fixed.txt
+
+# Install dependencies with cache mount for faster builds
+RUN --mount=type=cache,target=/root/.cache/pip \
     pip install -r /requirements/dev_fixed.txt
 
 # Add python-core-utils from Orange Health private GitHub repo
 ARG PYTHON_CORE_UTILS_VERSION=v1.1.1#egg=python-core-utils
 ARG PYTHON_CORE_UTILS_TOKEN
-RUN pip install git+https://x-access-token:${PYTHON_CORE_UTILS_TOKEN}@github.com/Orange-Health/python-core-utils.git@${PYTHON_CORE_UTILS_VERSION}
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install git+https://x-access-token:${PYTHON_CORE_UTILS_TOKEN}@github.com/Orange-Health/python-core-utils.git@${PYTHON_CORE_UTILS_VERSION}
+
+# Install debugpy for remote debugging (before copying app for better caching)
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install debugpy
 
 RUN mkdir /app
 WORKDIR /app
 COPY ./app /app
 COPY ./serviceAccountKey.json /serviceAccountKey.json
-
-# Install debugpy for remote debugging
-RUN pip install debugpy
 
 # Expose debug port
 EXPOSE 5678
