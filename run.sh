@@ -1979,6 +1979,10 @@ do_run() {
     local build_start=$(now_ms)
     local build_log="${LOG_DIR}/build_output.log"
 
+    # Initialize build output log
+    > "$build_log"
+    echo "=== Build Started $(date) ===" >> "$build_log"
+
     echo -e "  ${DIM}Launching parallel builds...${NC}"
 
     # Build each service individually in parallel to allow continuation when one fails
@@ -2022,10 +2026,11 @@ do_run() {
     # Build backend services using docker-compose.yml (let Docker handle parallelization)
     if [ -n "$backend_services" ]; then
         echo -e "\n  ${CYAN}═══ Building Backend Services ═══${NC}\n"
+        echo -e "\n=== Building Backend Services ===" >> "$build_log"
         local backend_log="${LOG_DIR}/backend_build.log"
         # Let docker compose build all backend services - Docker BuildKit parallelizes automatically
-        # Show output directly to terminal
-        if $DOCKER_COMPOSE_CMD build --progress=plain $backend_services 2>&1 | tee "$backend_log"; then
+        # Show output directly to terminal and capture to both logs
+        if $DOCKER_COMPOSE_CMD build --progress=plain $backend_services 2>&1 | tee -a "$build_log" "$backend_log"; then
             echo -e "\n  ${GREEN}✓${NC} Backend services built successfully"
             # Mark all as success
             for svc in $backend_services; do
@@ -2050,9 +2055,10 @@ do_run() {
     # Build web services using docker-compose-web.yml
     if [ -n "$web_services" ] && [ -f "docker-compose-web.yml" ]; then
         echo -e "\n  ${CYAN}═══ Building Web Client Services ═══${NC}\n"
+        echo -e "\n=== Building Web Client Services ===" >> "$build_log"
         local web_log="${LOG_DIR}/web_build.log"
-        # Let docker compose build all web services
-        if $DOCKER_COMPOSE_CMD -f docker-compose-web.yml build --progress=plain $web_services 2>&1 | tee "$web_log"; then
+        # Let docker compose build all web services and capture to both logs
+        if $DOCKER_COMPOSE_CMD -f docker-compose-web.yml build --progress=plain $web_services 2>&1 | tee -a "$build_log" "$web_log"; then
             echo -e "\n  ${GREEN}✓${NC} Web client services built successfully"
             # Mark all as success
             for svc in $web_services; do
