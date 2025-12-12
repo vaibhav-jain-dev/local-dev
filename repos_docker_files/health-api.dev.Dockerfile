@@ -51,7 +51,10 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 RUN mkdir /app
 WORKDIR /app
 COPY ./app /app
-COPY ./serviceAccountKey.json /serviceAccountKey.json
+
+# Copy serviceAccountKey.json if it exists (optional - wildcard makes it optional)
+# Pattern matches serviceAccountKey.json or nothing (won't fail if missing)
+COPY serviceAccountKey.json* /
 
 # Expose application port and debug port
 EXPOSE 8000 5678
