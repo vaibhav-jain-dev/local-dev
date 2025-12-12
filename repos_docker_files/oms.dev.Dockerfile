@@ -26,5 +26,6 @@ EXPOSE 8080 2345
 # Run with Air for hot reload
 # Air will watch for file changes and automatically rebuild/restart the app
 # To debug, attach debugger to port 2345
-CMD ["air", "-c", ".air.toml"]
+# Air runs with default settings (no config file needed)
+CMD ["air"]
 

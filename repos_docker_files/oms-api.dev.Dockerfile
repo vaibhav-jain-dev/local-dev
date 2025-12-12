@@ -21,5 +21,6 @@ COPY . .
 EXPOSE 8080
 # Run with Air for hot reload
 # Air will watch for file changes and automatically rebuild/restart the app
-CMD ["air", "-c", ".air.toml"]
+# Air runs with default settings (no config file needed)
+CMD ["air"]
 

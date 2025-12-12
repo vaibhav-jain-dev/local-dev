@@ -19,4 +19,5 @@ ENV QUEUE_NAME=all
 
 # Run with Air for hot reload instead of pre-compiled binary
 # Air will watch for file changes and automatically rebuild/restart the consumer
-CMD ["air", "-c", ".air.toml"]
+# Air runs with default settings (no config file needed)
+CMD ["air"]
