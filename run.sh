@@ -1191,6 +1191,9 @@ generate_docker_compose() {
 services:
 COMPOSE
 
+    # Counter for assigning unique debug ports to Python services
+    local python_debug_port_offset=0
+
     for service in $backend_services; do
         local repo=$(get_service_config_path "$service" "git_repo")
         local port=$(get_service_config_path "$service" "port")
@@ -1265,8 +1268,9 @@ COMPOSE
 COMPOSE
         else
             # Python/Django services (default)
-            # Assign unique debug port for each service (5678 + offset)
-            local debug_port=$((5678 + ${#services_ready}))
+            # Assign unique debug port for each service (5678, 5679, 5680, etc.)
+            local debug_port=$((5678 + python_debug_port_offset))
+            python_debug_port_offset=$((python_debug_port_offset + 1))
             cat >> docker-compose.yml << COMPOSE
   ${service}:
     build:
@@ -1277,7 +1281,7 @@ COMPOSE
     container_name: ${service}
     ports:
       - "${port}:${port}"
-      - "${debug_port}:5678"  # Python debugger port (debugpy)
+      - "${debug_port}:5678"  # Python debugger port (debugpy) - mapped to ${debug_port}
     volumes:
       - ./cloned/${dir_name}/app:/app
       - ./cloned/${dir_name}:/workspace
