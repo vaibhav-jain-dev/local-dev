@@ -48,8 +48,8 @@ WORKDIR /app
 COPY ./app /app
 COPY ./serviceAccountKey.json /serviceAccountKey.json
 
-# Expose debug port
-EXPOSE 5678
+# Expose application port and debug port
+EXPOSE 8000 5678
 
 # Run with debugpy enabled (without --wait-for-client for faster startup)
 # Debugger will be available on port 5678, attach when needed
