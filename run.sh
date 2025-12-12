@@ -632,16 +632,21 @@ start_dashboard() {
 
     # Setup virtual environment if needed
     if [ ! -d "$dashboard_dir/venv" ]; then
-        echo -e "  Setting up dashboard environment..."
-        python3 -m venv "$dashboard_dir/venv" 2>/dev/null
+        echo -e "  ${DIM}Setting up dashboard environment...${NC}"
+        if ! python3 -m venv "$dashboard_dir/venv" 2>&1 | grep -v "^$"; then
+            echo -e "  ${YELLOW}⚠${NC} Failed to create virtual environment"
+            return 1
+        fi
     fi
 
     # Install dependencies if needed
     if [ ! -f "$dashboard_dir/venv/.deps_installed" ]; then
-        source "$dashboard_dir/venv/bin/activate"
-        pip install -q flask flask-cors pyyaml 2>/dev/null
+        echo -e "  ${DIM}Installing dashboard dependencies (Flask, PyYAML)...${NC}"
+        if ! (source "$dashboard_dir/venv/bin/activate" && pip install -q flask flask-cors pyyaml 2>&1); then
+            echo -e "  ${YELLOW}⚠${NC} Failed to install dependencies - dashboard disabled"
+            return 1
+        fi
         touch "$dashboard_dir/venv/.deps_installed"
-        deactivate
     fi
 
     # Start dashboard in background
@@ -680,6 +685,7 @@ start_dashboard() {
         return 0
     else
         echo -e "  ${YELLOW}⚠${NC} Dashboard failed to start - check $LOG_DIR/dashboard.log"
+        cat "$LOG_DIR/dashboard.log" 2>/dev/null | tail -5
         return 1
     fi
 }
@@ -857,10 +863,14 @@ setup_repository() {
         local clone_success=false
         local clone_error=""
         for attempt in 1 2 3; do
-            clone_error=$(git clone "$repo" "cloned/$dir_name" 2>&1)
-            if [ $? -eq 0 ]; then
+            # Add 60s timeout to git clone to prevent hanging (macOS compatible)
+            clone_error=$(run_with_timeout 60 git clone "$repo" "cloned/$dir_name" 2>&1)
+            local clone_exit=$?
+            if [ $clone_exit -eq 0 ]; then
                 clone_success=true
                 break
+            elif [ $clone_exit -eq 124 ]; then
+                clone_error="Git clone timed out after 60s - check network/SSH keys"
             fi
             [ $attempt -lt 3 ] && echo -n " retry $((attempt+1))..."
             sleep $((RANDOM % 3 + 1))
@@ -1006,11 +1016,25 @@ setup_repository() {
     local dockerfile_path=$(get_dockerfile_path "$service")
     if [ -f "$dockerfile_path" ]; then
         cp "$dockerfile_path" "cloned/$dir_name/dev.Dockerfile"
-        echo -e "    └─ dockerfile ready ${GREEN}✓${NC}"
+        echo -e "    ├─ dockerfile ready ${GREEN}✓${NC}"
     else
-        echo -e "    └─ ${RED}✗ no Dockerfile at $dockerfile_path${NC}"
+        echo -e "    ├─ ${RED}✗ no Dockerfile at $dockerfile_path${NC}"
         return 1
     fi
+
+    # Copy debug configurations (VSCode and PyCharm) for IDE support
+    local debug_configs_copied=0
+    if [ -d "$config_folder/debug-configs/.vscode" ]; then
+        mkdir -p "cloned/$dir_name/.vscode"
+        cp -r "$config_folder/debug-configs/.vscode/"* "cloned/$dir_name/.vscode/" 2>/dev/null && debug_configs_copied=$((debug_configs_copied + 1))
+    fi
+    if [ -d "$config_folder/debug-configs/.idea" ]; then
+        mkdir -p "cloned/$dir_name/.idea/runConfigurations"
+        cp -r "$config_folder/debug-configs/.idea/"* "cloned/$dir_name/.idea/" 2>/dev/null && debug_configs_copied=$((debug_configs_copied + 1))
+    fi
+    [ "$debug_configs_copied" -gt 0 ] && echo -e "    ├─ debug configs ready ${GREEN}✓${NC}"
+
+    echo -e "    └─ setup complete ${GREEN}✓${NC}"
 
     end_operation "setup:$service"
     return 0
@@ -1234,6 +1258,8 @@ COMPOSE
 COMPOSE
         else
             # Python/Django services (default)
+            # Assign unique debug port for each service (5678 + offset)
+            local debug_port=$((5678 + ${#services_ready}))
             cat >> docker-compose.yml << COMPOSE
   ${service}:
     build:
@@ -1242,7 +1268,9 @@ COMPOSE
       args:
         PYTHON_CORE_UTILS_TOKEN: \${PYTHON_CORE_UTILS_TOKEN:-}
     container_name: ${service}
-    ports: ["${port}:${port}"]
+    ports:
+      - "${port}:${port}"
+      - "${debug_port}:5678"  # Python debugger port (debugpy)
     volumes:
       - ./cloned/${dir_name}/app:/app
       - ./cloned/${dir_name}:/workspace
@@ -1250,12 +1278,12 @@ COMPOSE
       PYTHONDONTWRITEBYTECODE: 1
       PYTHONUNBUFFERED: 1
       DJANGO_SETTINGS_MODULE: app.secrets
+      DEBUG_PORT: 5678
 COMPOSE
         fi
 
         cat >> docker-compose.yml << COMPOSE
     networks: [oh-network]
-    platform: linux/amd64
     restart: unless-stopped
     stdin_open: true
     tty: true
@@ -1290,7 +1318,6 @@ COMPOSE
       CGO_ENABLED: 1
       GO111MODULE: on
     networks: [oh-network]
-    platform: linux/amd64
     restart: unless-stopped
     stdin_open: true
     tty: true
@@ -1347,7 +1374,6 @@ COMPOSE
       NEXT_TELEMETRY_DISABLED: 1
       WATCHPACK_POLLING: 'true'
     network_mode: host
-    platform: linux/amd64
     restart: unless-stopped
     stdin_open: true
     tty: true
@@ -1370,7 +1396,6 @@ COMPOSE
       NODE_ENV: development
       PORT: ${port}
     network_mode: host
-    platform: linux/amd64
     restart: unless-stopped
     stdin_open: true
     tty: true
@@ -1544,6 +1569,24 @@ do_restart() {
 }
 
 do_run() {
+    # Early Docker check - fail fast if Docker isn't available
+    echo -e "${YELLOW}Checking Docker availability...${NC}"
+    if ! command -v docker &>/dev/null; then
+        echo -e "${RED}✗ Docker is not installed${NC}"
+        echo -e "${YELLOW}Please install Docker Desktop from: https://www.docker.com/products/docker-desktop${NC}"
+        exit 1
+    fi
+
+    # Quick Docker daemon check with short timeout (using custom run_with_timeout for macOS compatibility)
+    if ! run_with_timeout 5 docker info &>/dev/null 2>&1; then
+        echo -e "${RED}✗ Docker daemon is not running${NC}"
+        echo -e "${YELLOW}Please start Docker Desktop and try again${NC}"
+        echo -e "${DIM}Tip: Check if Docker Desktop is fully started (not just opened)${NC}"
+        exit 1
+    fi
+    echo -e "${GREEN}✓${NC} Docker is ready"
+    echo ""
+
     local config_folder=$(get_config_folder)
 
     # Initialize metrics tracking
@@ -1966,166 +2009,75 @@ do_run() {
     echo -e "  ${DIM}Backend services to build: ${NC}${BOLD}$backend_services${NC}"
     [ -n "$web_services" ] && echo -e "  ${DIM}Web services to build: ${NC}${BOLD}$web_services${NC}"
 
-    # Start live log monitor if enabled
-    local live_monitor_pids=""
-    if [ "$LIVE_LOGS" = "true" ]; then
-        # Create log files first
-        for svc in $all_services; do
-            touch "${build_tmp}/${svc}.log"
-        done
-        live_monitor_pids=$(live_build_monitor "$build_tmp" $all_services)
-    fi
-
-    # Re-export DOCKER_COMPOSE_CMD to ensure subshells can access it
+    # Disable live monitor - use direct Docker output instead
     export DOCKER_COMPOSE_CMD
 
-    # Launch builds in parallel for each service
-    echo -e "  ${DIM}Starting build processes...${NC}"
-
-    # Build backend services using docker-compose.yml
-    for svc in $backend_services; do
-        local build_eta=$(get_operation_avg "build:$svc")
-        progress_start_operation "3" "$svc" "$build_eta"
-        (
-            local svc_log="${build_tmp}/${svc}.log"
-            local color=$(get_service_color "$svc")
-            echo "[$(date '+%H:%M:%S')] Starting build for $svc (backend)" >> "$svc_log"
-            # Use tee to show logs in real-time while also saving to file
-            $DOCKER_COMPOSE_CMD --progress=plain build "$svc" 2>&1 | tee -a "$svc_log" | while IFS= read -r line; do
-                echo -e "${color}[${svc}]${NC} $line"
-            done
-            local exit_code=${PIPESTATUS[0]}
-            echo "[$(date '+%H:%M:%S')] Build finished for $svc with exit code: $exit_code" >> "$svc_log"
-            # Check for actual Docker build failures (not npm/webpack warnings that contain "error")
-            # - exit code non-zero = definite failure
-            # - "failed to solve" = Docker BuildKit failure
-            # - "executor failed" = Docker build step failure
-            # - "ERROR: " at line start = Docker error message
-            if [ $exit_code -eq 0 ] && ! grep -qE "failed to solve|executor failed running|^ERROR: " "$svc_log" 2>/dev/null; then
+    # Build backend services using docker-compose.yml (let Docker handle parallelization)
+    if [ -n "$backend_services" ]; then
+        echo -e "\n  ${CYAN}═══ Building Backend Services ═══${NC}\n"
+        local backend_log="${LOG_DIR}/backend_build.log"
+        # Let docker compose build all backend services - Docker BuildKit parallelizes automatically
+        # Show output directly to terminal
+        if $DOCKER_COMPOSE_CMD build --progress=plain $backend_services 2>&1 | tee "$backend_log"; then
+            echo -e "\n  ${GREEN}✓${NC} Backend services built successfully"
+            # Mark all as success
+            for svc in $backend_services; do
                 echo "success" > "${build_tmp}/${svc}.status"
-            else
-                echo "failed" > "${build_tmp}/${svc}.status"
-            fi
-        ) &
-        build_pids="$build_pids $!"
-    done
-
-    # Build web services using docker-compose-web.yml
-    for svc in $web_services; do
-        local build_eta=$(get_operation_avg "build:$svc")
-        progress_start_operation "3" "$svc" "$build_eta"
-        (
-            local svc_log="${build_tmp}/${svc}.log"
-            local color=$(get_service_color "$svc")
-            echo "[$(date '+%H:%M:%S')] Starting build for $svc (web client)" >> "$svc_log"
-            # Use tee to show logs in real-time while also saving to file
-            $DOCKER_COMPOSE_CMD -f docker-compose-web.yml --progress=plain build "$svc" 2>&1 | tee -a "$svc_log" | while IFS= read -r line; do
-                echo -e "${color}[${svc}]${NC} $line"
+                progress_end_operation "3" "$svc" "complete"
             done
-            local exit_code=${PIPESTATUS[0]}
-            echo "[$(date '+%H:%M:%S')] Build finished for $svc with exit code: $exit_code" >> "$svc_log"
-            if [ $exit_code -eq 0 ] && ! grep -qE "failed to solve|executor failed running|^ERROR: " "$svc_log" 2>/dev/null; then
-                echo "success" > "${build_tmp}/${svc}.status"
-            else
-                echo "failed" > "${build_tmp}/${svc}.status"
-            fi
-        ) &
-        build_pids="$build_pids $!"
-    done
-
-    # Monitor progress while builds are running (with timeout)
-    local pending_services="$all_services"
-    local completed_count=0
-    local total_count=$(echo $all_services | wc -w | xargs)
-    local wait_time=0
-    local max_wait=600  # 10 minute timeout for builds
-
-    echo -ne "  ${DIM}Progress: [${NC}"
-
-    while [ -n "$pending_services" ]; do
-        local still_pending=""
-        for svc in $pending_services; do
-            if [ -f "${build_tmp}/${svc}.status" ]; then
-                local status=$(cat "${build_tmp}/${svc}.status")
-                completed_count=$((completed_count + 1))
-                if [ "$status" = "success" ]; then
-                    echo -ne "${GREEN}●${NC}"
+        else
+            echo -e "\n  ${YELLOW}⚠${NC} Some backend services failed to build"
+            # Check each service individually to determine which failed
+            for svc in $backend_services; do
+                if docker images --format "{{.Repository}}:{{.Tag}}" | grep -q "^${svc}:"; then
+                    echo "success" > "${build_tmp}/${svc}.status"
+                    progress_end_operation "3" "$svc" "complete"
                 else
-                    echo -ne "${RED}●${NC}"
-                fi
-            else
-                still_pending="$still_pending $svc"
-            fi
-        done
-        pending_services=$(echo $still_pending | xargs)
-
-        # Show remaining count if still building
-        if [ -n "$pending_services" ]; then
-            local remaining=$(echo $pending_services | wc -w | xargs)
-            echo -ne "\r  ${DIM}Progress: [$completed_count/$total_count]${NC} "
-            for i in $(seq 1 $completed_count); do echo -ne "${GREEN}●${NC}"; done
-            for i in $(seq 1 $remaining); do echo -ne "${DIM}○${NC}"; done
-            echo -ne " ${DIM}building...${NC}"
-            sleep 1
-            wait_time=$((wait_time + 1))
-
-            # Timeout check - kill stuck builds after max_wait seconds
-            if [ $wait_time -ge $max_wait ]; then
-                echo -e "\n  ${YELLOW}⚠${NC} Build timeout after ${max_wait}s - killing stuck builds..."
-                for pid in $build_pids; do
-                    kill $pid 2>/dev/null || true
-                    pkill -P $pid 2>/dev/null || true
-                done
-                # Mark remaining as failed
-                for svc in $pending_services; do
                     echo "failed" > "${build_tmp}/${svc}.status"
-                done
-                break
-            fi
+                    progress_end_operation "3" "$svc" "failed"
+                fi
+            done
         fi
-    done
-
-    echo -e "\r  ${DIM}Progress: [$total_count/$total_count]${NC} ${GREEN}done${NC}                    "
-
-    # Wait for all builds to complete (cleanup any remaining)
-    for pid in $build_pids; do
-        wait $pid 2>/dev/null || true
-    done
-
-    # Stop live log monitor
-    if [ "$LIVE_LOGS" = "true" ] && [ -n "$live_monitor_pids" ]; then
-        stop_live_monitor "$live_monitor_pids"
     fi
 
-    # Collect build results
+    # Build web services using docker-compose-web.yml
+    if [ -n "$web_services" ] && [ -f "docker-compose-web.yml" ]; then
+        echo -e "\n  ${CYAN}═══ Building Web Client Services ═══${NC}\n"
+        local web_log="${LOG_DIR}/web_build.log"
+        # Let docker compose build all web services
+        if $DOCKER_COMPOSE_CMD -f docker-compose-web.yml build --progress=plain $web_services 2>&1 | tee "$web_log"; then
+            echo -e "\n  ${GREEN}✓${NC} Web client services built successfully"
+            # Mark all as success
+            for svc in $web_services; do
+                echo "success" > "${build_tmp}/${svc}.status"
+                progress_end_operation "3" "$svc" "complete"
+            done
+        else
+            echo -e "\n  ${YELLOW}⚠${NC} Some web client services failed to build"
+            # Check each service individually
+            for svc in $web_services; do
+                if docker images --format "{{.Repository}}:{{.Tag}}" | grep -q "^${svc}:"; then
+                    echo "success" > "${build_tmp}/${svc}.status"
+                    progress_end_operation "3" "$svc" "complete"
+                else
+                    echo "failed" > "${build_tmp}/${svc}.status"
+                    progress_end_operation "3" "$svc" "failed"
+                fi
+            done
+        fi
+    fi
+
+    # Collect build results from status files
     local build_succeeded=""
     local build_failed=""
-    : > "$build_log"  # Clear/create the main build log
 
     for svc in $all_services; do
-        # Append individual log to main build log
-        if [ -f "${build_tmp}/${svc}.log" ]; then
-            echo "========== BUILD: $svc ==========" >> "$build_log"
-            cat "${build_tmp}/${svc}.log" >> "$build_log"
-            echo "" >> "$build_log"
-        fi
-
         if [ -f "${build_tmp}/${svc}.status" ]; then
             local status=$(cat "${build_tmp}/${svc}.status")
             if [ "$status" = "success" ]; then
                 build_succeeded="$build_succeeded $svc"
-                progress_end_operation "3" "$svc" "complete"
-                echo -e "  ${GREEN}✓${NC} $svc built successfully"
             else
                 build_failed="$build_failed $svc"
-                progress_end_operation "3" "$svc" "failed"
-                echo -e "  ${RED}✗${NC} $svc build failed"
-                # Show error snippet
-                if [ -f "${build_tmp}/${svc}.log" ]; then
-                    tail -10 "${build_tmp}/${svc}.log" 2>/dev/null | grep -iE "error|failed|fatal" | head -3 | while IFS= read -r line; do
-                        echo -e "    ${DIM}$line${NC}"
-                    done
-                fi
             fi
         fi
     done
@@ -2143,13 +2095,14 @@ do_run() {
     local succeeded_count=$(echo $build_succeeded | wc -w | xargs)
     local failed_count=$(echo $build_failed | wc -w | xargs)
 
+    echo ""
     if [ -z "$build_failed" ]; then
-        echo -e "  ${GREEN}✓${NC} All containers built ${DIM}($(format_duration $build_duration))${NC}"
+        echo -e "  ${GREEN}✓${NC} All containers built successfully ${DIM}($(format_duration $build_duration))${NC}"
     else
-        echo -e "\n  ${YELLOW}⚠${NC} Build completed with failures ${DIM}($(format_duration $build_duration))${NC}"
+        echo -e "  ${YELLOW}⚠${NC} Build completed with some failures ${DIM}($(format_duration $build_duration))${NC}"
         echo -e "  ${GREEN}Succeeded:${NC} $succeeded_count ${DIM}($build_succeeded)${NC}"
         echo -e "  ${RED}Failed:${NC} $failed_count ${DIM}($build_failed)${NC}"
-        echo -e "  ${YELLOW}Full build log:${NC} $build_log"
+        echo -e "  ${YELLOW}Build logs:${NC} logs/backend_build.log, logs/web_build.log"
 
         if [ -z "$build_succeeded" ]; then
             echo -e "\n${RED}Aborting: No containers built successfully${NC}"

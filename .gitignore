@@ -11,6 +11,7 @@ cloned/*
 
 # Ignore docker-compose.yml in the root directory
 /docker-compose.yml
+/docker-compose-web.yml
 
 # Dashboard virtual environment
 dashboard/venv/
