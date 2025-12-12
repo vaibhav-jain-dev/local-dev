@@ -41,4 +41,12 @@ RUN mkdir /app
 WORKDIR /app
 COPY ./app /app
 
-CMD ["python", "manage.py", "runserver", "0.0.0.0:8010"]
+# Install debugpy for remote debugging
+RUN pip install debugpy
+
+# Expose debug port
+EXPOSE 5678
+
+# Run with debugpy enabled (without --wait-for-client for faster startup)
+# Debugger will be available on port 5678, attach when needed
+CMD ["python", "-m", "debugpy", "--listen", "0.0.0.0:5678", "manage.py", "runserver", "0.0.0.0:8010", "--noreload"]
