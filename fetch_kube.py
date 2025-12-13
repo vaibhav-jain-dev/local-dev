@@ -42,10 +42,16 @@ HOW TO RUN
    Only enable if you have proper certificates configured.
 
 3. Run the script:
-      python3 fetch_kube.py <namespace>
+      python3 fetch_kube.py <namespace> [--fresh] [--auto-refresh]
 
-   Example:
+   Examples:
       python3 fetch_kube.py s2
+      python3 fetch_kube.py s2 --fresh
+      python3 fetch_kube.py s2 --auto-refresh
+
+   Options:
+      --fresh        : Bypass all caches and fetch fresh data
+      --auto-refresh : Enable auto-refresh (checks every 5 min for tag changes)
 
    If namespace omitted, default = "s2"
 
@@ -147,6 +153,7 @@ if not GITHUB_TOKEN:
 parser = argparse.ArgumentParser(description='Generate K8s deployment report')
 parser.add_argument('namespace', nargs='?', default='s2', help='Kubernetes namespace (default: s2)')
 parser.add_argument('--fresh', action='store_true', help='Bypass all caches and fetch fresh data')
+parser.add_argument('--auto-refresh', action='store_true', help='Auto-refresh report every 5 minutes and show tag change alerts')
 args = parser.parse_args()
 
 # ============================================================
@@ -155,6 +162,7 @@ args = parser.parse_args()
 
 NAMESPACE = args.namespace
 USE_CACHE = not args.fresh  # Skip cache if --fresh flag is used
+AUTO_REFRESH = args.auto_refresh  # Enable auto-refresh mode
 MAX_CONCURRENT = 10  # Parallelism for service processing
 MAX_GITHUB_CONCURRENT = 5  # Parallelism for GitHub API calls
 
@@ -248,6 +256,41 @@ REPO_MAP = {
     "bifrost": "bifrost",
 }
 
+# Categorized structure with BE/Workers/Web subcategories
+CATEGORY_STRUCTURE = {
+    "oms": {
+        "name": "OMS",
+        "be": ["oms-api"],
+        "workers": ["oms-consumer", "oms-scheduler", "oms-worker"],
+        "web": ["oms-web"]
+    },
+    "health": {
+        "name": "Health API",
+        "be": ["health-api"],
+        "workers": ["health-celery-beat", "health-celery-worker", "health-consumer", "health-s3-nginx"],
+        "web": []
+    },
+    "partner": {
+        "name": "Partner",
+        "be": ["partner-api"],
+        "workers": ["partner-consumer", "partner-scheduler", "partner-worker-high", "partner-worker-low", "partner-worker-medium"],
+        "web": ["partner-web"]
+    },
+    "occ": {
+        "name": "OCC",
+        "be": ["occ-api"],
+        "workers": [],
+        "web": ["occ-web"]
+    },
+    "d2c": {
+        "name": "D2C Web",
+        "be": [],
+        "workers": [],
+        "web": ["bifrost"]
+    }
+}
+
+# Legacy flat structure for backward compatibility
 CATEGORIES = {
     "oms": ["oms-api", "oms-consumer", "oms-scheduler", "oms-web", "oms-worker"],
     "health": ["health-api", "health-celery-beat", "health-celery-worker", "health-consumer", "health-s3-nginx"],
@@ -625,534 +668,281 @@ async def process_service(
 
 
 # ============================================================
+# CATEGORY DATA ORGANIZATION
+# ============================================================
+
+def organize_by_categories(services_data: list) -> dict:
+    """Organize services by categories with BE/Workers/Web subcategories."""
+    # Create a map of service name to service data
+    services_map = {svc["service"]: svc for svc in services_data}
+
+    organized = {}
+    for cat_key, cat_info in CATEGORY_STRUCTURE.items():
+        cat_data = {
+            "name": cat_info["name"],
+            "be": [],
+            "workers": [],
+            "web": [],
+            "all_healthy": True,
+            "total_services": 0,
+            "healthy_count": 0
+        }
+
+        # Add BE services
+        for svc_name in cat_info["be"]:
+            if svc_name in services_map:
+                cat_data["be"].append(services_map[svc_name])
+                cat_data["total_services"] += 1
+                if services_map[svc_name]["status_class"] == "status-ok":
+                    cat_data["healthy_count"] += 1
+                else:
+                    cat_data["all_healthy"] = False
+
+        # Add Worker services
+        for svc_name in cat_info["workers"]:
+            if svc_name in services_map:
+                cat_data["workers"].append(services_map[svc_name])
+                cat_data["total_services"] += 1
+                if services_map[svc_name]["status_class"] == "status-ok":
+                    cat_data["healthy_count"] += 1
+                else:
+                    cat_data["all_healthy"] = False
+
+        # Add Web services
+        for svc_name in cat_info["web"]:
+            if svc_name in services_map:
+                cat_data["web"].append(services_map[svc_name])
+                cat_data["total_services"] += 1
+                if services_map[svc_name]["status_class"] == "status-ok":
+                    cat_data["healthy_count"] += 1
+                else:
+                    cat_data["all_healthy"] = False
+
+        organized[cat_key] = cat_data
+
+    return organized
+
+
+# ============================================================
 # HTML TEMPLATE RENDERING
 # ============================================================
 
 def render_html_report(namespace: str, services_data: list, total: int, healthy: int, degraded: int, missing: int) -> str:
     """Render HTML report using Jinja2 template."""
 
+    # Organize data by categories
+    categorized_data = organize_by_categories(services_data)
+
     template_str = '''<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>K8s Deployment Report - {{ namespace }}</title>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>K8s Report - {{ namespace }}</title>
 <style>
-:root {
-  --bg-primary: #f5f7fa;
-  --bg-secondary: #ffffff;
-  --bg-code: #1e1e2e;
-  --text-primary: #2c3e50;
-  --text-secondary: #7f8c8d;
-  --text-code: #e0e0e0;
-  --border: #e1e8ed;
-  --shadow: rgba(0, 0, 0, 0.08);
-  --accent: #3498db;
-  --status-ok: #2ecc71;
-  --status-ok-bg: #d4f7da;
-  --status-degraded: #f39c12;
-  --status-degraded-bg: #ffe7c2;
-  --status-missing: #e74c3c;
-  --status-missing-bg: #ffd4d4;
-}
-
-[data-theme="dark"] {
-  --bg-primary: #0d1117;
-  --bg-secondary: #161b22;
-  --bg-code: #0d1117;
-  --text-primary: #c9d1d9;
-  --text-secondary: #8b949e;
-  --text-code: #c9d1d9;
-  --border: #30363d;
-  --shadow: rgba(0, 0, 0, 0.3);
-}
-
-* { margin: 0; padding: 0; box-sizing: border-box; }
-
-body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  padding: 20px;
-  line-height: 1.6;
-  transition: background 0.3s, color 0.3s;
-}
-
-.header {
-  max-width: 1400px;
-  margin: 0 auto 30px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 20px;
-}
-
-.header h1 {
-  font-size: 28px;
-  font-weight: 700;
-  color: var(--text-primary);
-}
-
-.controls {
-  display: flex;
-  gap: 15px;
-  flex-wrap: wrap;
-  align-items: center;
-}
-
-.search-box {
-  position: relative;
-}
-
-.search-box input {
-  padding: 10px 40px 10px 15px;
-  border: 2px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  font-size: 14px;
-  width: 300px;
-  transition: border-color 0.2s;
-}
-
-.search-box input:focus {
-  outline: none;
-  border-color: var(--accent);
-}
-
-.search-box::after {
-  content: '🔍';
-  position: absolute;
-  right: 12px;
-  top: 50%;
-  transform: translateY(-50%);
-}
-
-.filter-group {
-  display: flex;
-  gap: 10px;
-}
-
-.filter-btn {
-  padding: 8px 16px;
-  border: 2px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  cursor: pointer;
-  font-size: 13px;
-  font-weight: 500;
-  transition: all 0.2s;
-}
-
-.filter-btn:hover {
-  border-color: var(--accent);
-}
-
-.filter-btn.active {
-  background: var(--accent);
-  color: white;
-  border-color: var(--accent);
-}
-
-.theme-toggle {
-  padding: 10px 20px;
-  border: none;
-  border-radius: 8px;
-  background: var(--accent);
-  color: white;
-  cursor: pointer;
-  font-size: 14px;
-  font-weight: 600;
-  transition: opacity 0.2s;
-}
-
-.theme-toggle:hover {
-  opacity: 0.9;
-}
-
-.stats {
-  max-width: 1400px;
-  margin: 0 auto 20px;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 15px;
-}
-
-.stat-card {
-  background: var(--bg-secondary);
-  padding: 20px;
-  border-radius: 12px;
-  border: 1px solid var(--border);
-  text-align: center;
-  transition: transform 0.2s;
-}
-
-.stat-card:hover {
-  transform: translateY(-2px);
-}
-
-.stat-number {
-  font-size: 32px;
-  font-weight: 700;
-  margin-bottom: 8px;
-}
-
-.stat-label {
-  font-size: 13px;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
-  gap: 20px;
-  max-width: 1400px;
-  margin: 0 auto;
-}
-
-.card {
-  background: var(--bg-secondary);
-  padding: 20px;
-  border-radius: 12px;
-  box-shadow: 0 2px 8px var(--shadow);
-  border: 1px solid var(--border);
-  transition: transform 0.2s, box-shadow 0.2s;
-  animation: fadeIn 0.3s ease-in;
-}
-
-.card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 16px var(--shadow);
-}
-
-.card.hidden {
-  display: none;
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-.svc-title {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 15px;
-  padding-bottom: 12px;
-  border-bottom: 2px solid var(--border);
-}
-
-.svc-name {
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--text-primary);
-}
-
-.svc-info {
-  margin-bottom: 15px;
-}
-
-.info-item {
-  margin-bottom: 10px;
-  font-size: 14px;
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-}
-
-.info-item strong {
-  color: var(--text-secondary);
-  font-weight: 600;
-  min-width: 80px;
-}
-
-.info-item a {
-  color: var(--accent);
-  text-decoration: none;
-}
-
-.info-item a:hover {
-  text-decoration: underline;
-}
-
-.tag {
-  background: var(--bg-code);
-  color: var(--text-code);
-  padding: 4px 10px;
-  border-radius: 6px;
-  font-family: 'Monaco', 'Consolas', monospace;
-  font-size: 13px;
-}
-
-.deployed-time {
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-
-.status {
-  padding: 6px 14px;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.status-ok {
-  background: var(--status-ok-bg);
-  color: var(--status-ok);
-}
-
-.status-degraded {
-  background: var(--status-degraded-bg);
-  color: var(--status-degraded);
-}
-
-.status-missing {
-  background: var(--status-missing-bg);
-  color: var(--status-missing);
-}
-
-.section {
-  margin-bottom: 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.section summary {
-  padding: 12px 15px;
-  background: var(--bg-primary);
-  cursor: pointer;
-  font-weight: 600;
-  font-size: 14px;
-  user-select: none;
-  transition: background 0.2s;
-  list-style: none;
-}
-
-.section summary::-webkit-details-marker {
-  display: none;
-}
-
-.section summary::before {
-  content: '▶ ';
-  display: inline-block;
-  transition: transform 0.2s;
-}
-
-.section[open] summary::before {
-  transform: rotate(90deg);
-}
-
-.section summary:hover {
-  background: var(--border);
-}
-
-.section[open] summary {
-  border-bottom: 1px solid var(--border);
-}
-
-.code-block {
-  background: var(--bg-code);
-  color: var(--text-code);
-  padding: 15px;
-  border-radius: 0;
-  font-size: 12px;
-  font-family: 'Monaco', 'Consolas', monospace;
-  white-space: pre-wrap;
-  overflow-x: auto;
-  margin: 0;
-  line-height: 1.6;
-}
-
-.no-results {
-  text-align: center;
-  padding: 60px 20px;
-  color: var(--text-secondary);
-  font-size: 18px;
-  display: none;
-}
-
-.no-results.show {
-  display: block;
-}
-
-@media (max-width: 768px) {
-  .grid {
-    grid-template-columns: 1fr;
-  }
-
-  .header {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .controls {
-    flex-direction: column;
-  }
-
-  .search-box input {
-    width: 100%;
-  }
-}
+:root{--bg-primary:#f5f7fa;--bg-secondary:#fff;--bg-code:#1e1e2e;--text-primary:#2c3e50;--text-secondary:#7f8c8d;
+--text-code:#e0e0e0;--border:#e1e8ed;--shadow:rgba(0,0,0,0.08);--accent:#3498db;--status-ok:#2ecc71;
+--status-ok-bg:#d4f7da;--status-degraded:#f39c12;--status-degraded-bg:#ffe7c2;--status-missing:#e74c3c;--status-missing-bg:#ffd4d4;}
+[data-theme="dark"]{--bg-primary:#0d1117;--bg-secondary:#161b22;--bg-code:#0d1117;--text-primary:#c9d1d9;
+--text-secondary:#8b949e;--text-code:#c9d1d9;--border:#30363d;--shadow:rgba(0,0,0,0.3);}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg-primary);
+color:var(--text-primary);padding:20px;line-height:1.6;}
+.header{max-width:1600px;margin:0 auto 30px;display:flex;justify-content:space-between;align-items:center;
+flex-wrap:wrap;gap:20px;}
+.header h1{font-size:28px;font-weight:700;}
+.stats{max-width:1600px;margin:0 auto 20px;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:15px;}
+.stat-card{background:var(--bg-secondary);padding:20px;border-radius:12px;border:1px solid var(--border);text-align:center;}
+.stat-number{font-size:32px;font-weight:700;margin-bottom:8px;}
+.stat-label{font-size:13px;color:var(--text-secondary);text-transform:uppercase;}
+.categories{max-width:1600px;margin:0 auto;}
+.category-section{background:var(--bg-secondary);border-radius:12px;padding:20px;margin-bottom:20px;
+border:1px solid var(--border);box-shadow:0 2px 8px var(--shadow);}
+.category-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;cursor:pointer;
+user-select:none;padding:10px;border-radius:8px;transition:background 0.2s;}
+.category-header:hover{background:var(--bg-primary);}
+.category-title{font-size:24px;font-weight:700;display:flex;align-items:center;gap:10px;}
+.category-badge{font-size:12px;padding:4px 12px;border-radius:12px;font-weight:600;}
+.category-badge.healthy{background:var(--status-ok-bg);color:var(--status-ok);}
+.category-badge.degraded{background:var(--status-degraded-bg);color:var(--status-degraded);}
+.subcategory{margin-bottom:15px;}
+.subcategory-title{font-size:14px;font-weight:600;color:var(--text-secondary);margin-bottom:10px;
+text-transform:uppercase;letter-spacing:0.5px;}
+.services-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;}
+.service-card{background:var(--bg-primary);padding:12px;border-radius:8px;border:1px solid var(--border);
+transition:transform 0.2s,box-shadow 0.2s;cursor:pointer;position:relative;}
+.service-card:hover{transform:translateY(-2px);box-shadow:0 4px 12px var(--shadow);}
+.service-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;}
+.service-name{font-weight:600;font-size:15px;}
+.status{padding:4px 10px;border-radius:6px;font-size:11px;font-weight:600;}
+.status-ok{background:var(--status-ok-bg);color:var(--status-ok);}
+.status-degraded{background:var(--status-degraded-bg);color:var(--status-degraded);}
+.status-missing{background:var(--status-missing-bg);color:var(--status-missing);}
+.service-info{font-size:12px;color:var(--text-secondary);}
+.tag{background:var(--bg-code);color:var(--text-code);padding:2px 6px;border-radius:4px;
+font-family:Monaco,monospace;font-size:11px;}
+.tooltip{position:absolute;background:#000;color:#fff;padding:8px 12px;border-radius:6px;font-size:12px;
+white-space:nowrap;z-index:1000;opacity:0;pointer-events:none;transition:opacity 0.2s;}
+.service-card:hover .tooltip{opacity:0.95;}
+.details-modal{display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
+background:var(--bg-secondary);border-radius:12px;padding:30px;max-width:800px;max-height:80vh;
+overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,0.3);z-index:2000;}
+.details-modal.show{display:block;}
+.modal-overlay{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);
+z-index:1999;}
+.modal-overlay.show{display:block;}
+.details-section{margin:15px 0;border:1px solid var(--border);border-radius:8px;overflow:hidden;}
+.details-section summary{padding:12px;background:var(--bg-primary);cursor:pointer;font-weight:600;}
+.code-block{background:var(--bg-code);color:var(--text-code);padding:15px;font-size:12px;
+font-family:Monaco,monospace;white-space:pre-wrap;overflow-x:auto;line-height:1.6;}
+.theme-toggle{padding:10px 20px;border:none;border-radius:8px;background:var(--accent);color:white;
+cursor:pointer;font-size:14px;font-weight:600;}
+.alert{position:fixed;top:20px;right:20px;background:#ff9800;color:#fff;padding:15px 20px;border-radius:8px;
+box-shadow:0 4px 12px rgba(0,0,0,0.3);z-index:3000;animation:slideIn 0.3s;max-width:400px;}
+.alert.success{background:#4caf50;}
+.alert.error{background:#f44336;}
+@keyframes slideIn{from{transform:translateX(100%);}to{transform:translateX(0);}}
+.close-btn{cursor:pointer;float:right;font-size:20px;font-weight:bold;margin-left:10px;}
+.category-content{max-height:0;overflow:hidden;transition:max-height 0.3s ease;}
+.category-content.expanded{max-height:5000px;}
+.toggle-icon{transition:transform 0.3s;}
+.toggle-icon.expanded{transform:rotate(90deg);}
 </style>
-</head>
-<body>
-
+</head><body>
 <div class="header">
-  <h1>🚀 K8s Deployment Report - {{ namespace }}</h1>
-  <div class="controls">
-    <div class="search-box">
-      <input type="text" id="searchInput" placeholder="Search services...">
-    </div>
-    <div class="filter-group">
-      <button class="filter-btn active" data-filter="all">All</button>
-      <button class="filter-btn" data-filter="status-ok">✅ Healthy</button>
-      <button class="filter-btn" data-filter="status-degraded">⚠️ Degraded</button>
-      <button class="filter-btn" data-filter="status-missing">❌ Missing</button>
-    </div>
-    <button class="theme-toggle" onclick="toggleTheme()">🌓 Toggle Theme</button>
-  </div>
+<h1>🚀 K8s Report - {{ namespace }}</h1>
+<button class="theme-toggle" onclick="toggleTheme()">🌓 Theme</button>
 </div>
-
 <div class="stats">
-  <div class="stat-card">
-    <div class="stat-number">{{ total }}</div>
-    <div class="stat-label">Total Services</div>
-  </div>
-  <div class="stat-card">
-    <div class="stat-number" style="color: var(--status-ok)">{{ healthy }}</div>
-    <div class="stat-label">Healthy</div>
-  </div>
-  <div class="stat-card">
-    <div class="stat-number" style="color: var(--status-degraded)">{{ degraded }}</div>
-    <div class="stat-label">Degraded</div>
-  </div>
-  <div class="stat-card">
-    <div class="stat-number" style="color: var(--status-missing)">{{ missing }}</div>
-    <div class="stat-label">Missing</div>
-  </div>
+<div class="stat-card"><div class="stat-number">{{ total }}</div><div class="stat-label">Total</div></div>
+<div class="stat-card"><div class="stat-number" style="color:var(--status-ok)">{{ healthy }}</div><div class="stat-label">Healthy</div></div>
+<div class="stat-card"><div class="stat-number" style="color:var(--status-degraded)">{{ degraded }}</div><div class="stat-label">Degraded</div></div>
+<div class="stat-card"><div class="stat-number" style="color:var(--status-missing)">{{ missing }}</div><div class="stat-label">Missing</div></div>
 </div>
-
-<div class="grid" id="serviceGrid">
-{% for svc in services %}
-  <div class="card" data-service="{{ svc.service }}" data-repo="{{ svc.repo }}" data-status="{{ svc.status_class }}">
-    <div class="svc-title">
-      <span class="svc-name">{{ svc.service }}</span>
-      <span class="status {{ svc.status_class }}">{{ svc.status }}</span>
-    </div>
-    <div class="svc-info">
-      <div class="info-item">
-        <strong>Repo:</strong>
-        <a href="https://github.com/Orange-Health/{{ svc.repo }}" target="_blank">{{ svc.repo }}</a>
-      </div>
-      <div class="info-item">
-        <strong>Tag:</strong>
-        <code class="tag">{{ svc.tag }}</code>
-      </div>
-      <div class="info-item">
-        <strong>Deployed:</strong>
-        <span class="deployed-time">{{ svc.deployed_at }}</span>
-      </div>
-    </div>
-
-    <details class="section">
-      <summary>📦 Pods ({{ svc.pods_info|length }})</summary>
-      <pre class="code-block">{% for pod in svc.pods_info %}{{ pod }}
-{% endfor %}</pre>
-    </details>
-
-    <details open class="section">
-      <summary>🌿 Common Branches (current)</summary>
-      <pre class="code-block">{{ svc.common_branches }}</pre>
-    </details>
-
-    <details class="section">
-      <summary>📚 History (last {{ svc.history|length }})</summary>
-      <pre class="code-block">{% for h in svc.history %}--- {{ h.filename }} ---
-{{ h.content }}
-
-{% endfor %}{% if not svc.history %}No history available{% endif %}</pre>
-    </details>
-  </div>
+<div class="categories">
+{% for cat_key, cat_data in categories.items() %}
+{% if cat_data.total_services > 0 %}
+<div class="category-section">
+<div class="category-header" onclick="toggleCategory('{{ cat_key }}')">
+<div class="category-title">
+<span class="toggle-icon" id="toggle-{{ cat_key }}">▶</span>
+<span>{{ cat_data.name }}</span>
+<span class="category-badge {% if cat_data.all_healthy %}healthy{% else %}degraded{% endif %}">
+{{ cat_data.healthy_count }}/{{ cat_data.total_services }}
+</span>
+</div>
+</div>
+<div class="category-content" id="content-{{ cat_key }}">
+{% if cat_data.be %}
+<div class="subcategory">
+<div class="subcategory-title">Backend API</div>
+<div class="services-grid">
+{% for svc in cat_data.be %}
+<div class="service-card" onclick="showDetails('{{ svc.service }}')">
+<div class="tooltip">{{ svc.tag }} | {{ svc.deployed_at }}</div>
+<div class="service-header">
+<span class="service-name">{{ svc.service }}</span>
+<span class="status {{ svc.status_class }}">{{ svc.status }}</span>
+</div>
+<div class="service-info">
+<div>Tag: <code class="tag">{{ svc.tag }}</code></div>
+</div>
+</div>
 {% endfor %}
 </div>
-
-<div class="no-results" id="noResults">
-  No services found matching your criteria
 </div>
-
+{% endif %}
+{% if cat_data.workers %}
+<div class="subcategory">
+<div class="subcategory-title">Workers</div>
+<div class="services-grid">
+{% for svc in cat_data.workers %}
+<div class="service-card" onclick="showDetails('{{ svc.service }}')">
+<div class="service-header">
+<span class="service-name">{{ svc.service }}</span>
+<span class="status {{ svc.status_class }}">{{ svc.status }}</span>
+</div>
+<div class="service-info">
+<div>Tag: <code class="tag">{{ svc.tag }}</code></div>
+</div>
+</div>
+{% endfor %}
+</div>
+</div>
+{% endif %}
+{% if cat_data.web %}
+<div class="subcategory">
+<div class="subcategory-title">Web</div>
+<div class="services-grid">
+{% for svc in cat_data.web %}
+<div class="service-card" onclick="showDetails('{{ svc.service }}')">
+<div class="service-header">
+<span class="service-name">{{ svc.service }}</span>
+<span class="status {{ svc.status_class }}">{{ svc.status }}</span>
+</div>
+<div class="service-info">
+<div>Tag: <code class="tag">{{ svc.tag }}</code></div>
+</div>
+</div>
+{% endfor %}
+</div>
+</div>
+{% endif %}
+</div>
+</div>
+{% endif %}
+{% endfor %}
+</div>
+<div class="modal-overlay" id="modalOverlay" onclick="closeModal()"></div>
+<div class="details-modal" id="detailsModal"></div>
 <script>
-// Theme toggle
-function toggleTheme() {
-  const html = document.documentElement;
-  const currentTheme = html.getAttribute('data-theme');
-  const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-  html.setAttribute('data-theme', newTheme);
-  localStorage.setItem('theme', newTheme);
-}
-
-// Load saved theme
-const savedTheme = localStorage.getItem('theme') || 'light';
-document.documentElement.setAttribute('data-theme', savedTheme);
-
-// Search functionality
-const searchInput = document.getElementById('searchInput');
-const cards = document.querySelectorAll('.card');
-const noResults = document.getElementById('noResults');
-
-searchInput.addEventListener('input', filterCards);
-
-// Filter functionality
-const filterBtns = document.querySelectorAll('.filter-btn');
-let activeFilter = 'all';
-
-filterBtns.forEach(btn => {
-  btn.addEventListener('click', () => {
-    filterBtns.forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    activeFilter = btn.dataset.filter;
-    filterCards();
-  });
-});
-
-function filterCards() {
-  const searchTerm = searchInput.value.toLowerCase();
-  let visibleCount = 0;
-
-  cards.forEach(card => {
-    const service = card.dataset.service.toLowerCase();
-    const repo = card.dataset.repo.toLowerCase();
-    const status = card.dataset.status;
-
-    const matchesSearch = service.includes(searchTerm) || repo.includes(searchTerm);
-    const matchesFilter = activeFilter === 'all' || status === activeFilter;
-
-    if (matchesSearch && matchesFilter) {
-      card.classList.remove('hidden');
-      visibleCount++;
-    } else {
-      card.classList.add('hidden');
-    }
-  });
-
-  noResults.classList.toggle('show', visibleCount === 0);
-}
-
-// Auto-refresh notice
-console.log('Report generated at: ' + new Date().toLocaleString());
-console.log('Total services: {{ total }}');
-console.log('Healthy: {{ healthy }}, Degraded: {{ degraded }}, Missing: {{ missing }}');
+const serviceData={{ services_json|safe }};
+const autoRefresh={{ auto_refresh|lower }};
+const namespace='{{ namespace }}';
+let lastTags={};
+function toggleTheme(){const html=document.documentElement;const theme=html.getAttribute('data-theme');
+html.setAttribute('data-theme',theme==='dark'?'light':'dark');localStorage.setItem('theme',theme==='dark'?'light':'dark');}
+const savedTheme=localStorage.getItem('theme')||'light';document.documentElement.setAttribute('data-theme',savedTheme);
+function toggleCategory(catKey){const content=document.getElementById('content-'+catKey);
+const icon=document.getElementById('toggle-'+catKey);
+content.classList.toggle('expanded');icon.classList.toggle('expanded');}
+function showDetails(serviceName){const svc=serviceData.find(s=>s.service===serviceName);
+if(!svc)return;const modal=document.getElementById('detailsModal');const overlay=document.getElementById('modalOverlay');
+let html=`<h2>${svc.service}</h2><button class="close-btn" onclick="closeModal()">✕</button>
+<div style="margin-top:20px"><strong>Repo:</strong> <a href="https://github.com/Orange-Health/${svc.repo}" target="_blank">${svc.repo}</a></div>
+<div><strong>Tag:</strong> <code class="tag">${svc.tag}</code></div>
+<div><strong>Deployed:</strong> ${svc.deployed_at}</div>
+<div><strong>Status:</strong> <span class="status ${svc.status_class}">${svc.status}</span></div>
+<details class="details-section" open><summary>📦 Pods (${svc.pods_info.length})</summary>
+<pre class="code-block">${svc.pods_info.join('\\n')}</pre></details>
+<details class="details-section"><summary>🌿 Common Branches</summary>
+<pre class="code-block">${svc.common_branches}</pre></details>`;
+if(svc.history.length>0){html+=`<details class="details-section"><summary>📚 History</summary><pre class="code-block">`;
+svc.history.forEach(h=>{html+=`--- ${h.filename} ---\\n${h.content}\\n\\n`;});html+=`</pre></details>`;}
+modal.innerHTML=html;modal.classList.add('show');overlay.classList.add('show');}
+function closeModal(){document.getElementById('detailsModal').classList.remove('show');
+document.getElementById('modalOverlay').classList.remove('show');}
+function showAlert(message,type='success'){const alert=document.createElement('div');
+alert.className=`alert ${type}`;alert.innerHTML=`<span class="close-btn" onclick="this.parentElement.remove()">✕</span>${message}`;
+document.body.appendChild(alert);setTimeout(()=>alert.remove(),5000);}
+function checkTagChanges(){fetch(`/api/services/${namespace}`).then(r=>r.json()).then(data=>{
+let changes=[];data.forEach(svc=>{if(lastTags[svc.service]&&lastTags[svc.service]!==svc.tag){
+changes.push(`${svc.service}: ${lastTags[svc.service]} → ${svc.tag}`);}
+lastTags[svc.service]=svc.tag;});if(changes.length>0){showAlert(`Tag changes detected:\\n${changes.join('\\n')}`,'success');
+location.reload();}}).catch(e=>console.error('Refresh error:',e));}
+if(autoRefresh){serviceData.forEach(svc=>lastTags[svc.service]=svc.tag);setInterval(checkTagChanges,300000);}
 </script>
+</body></html>'''
 
-</body>
-</html>
-'''
+    template = Template(template_str)
+    return template.render(
+        namespace=namespace,
+        categories=categorized_data,
+        services_json=json.dumps(services_data),
+        total=total,
+        healthy=healthy,
+        degraded=degraded,
+        missing=missing,
+        auto_refresh=AUTO_REFRESH
+    )
 
     template = Template(template_str)
     return template.render(
@@ -1179,6 +969,8 @@ async def main():
     print(f"📍 Namespace: {NAMESPACE}")
     print(f"💾 Cache: {'DISABLED (--fresh mode)' if not USE_CACHE else 'ENABLED'}")
     print(f"🔒 SSL Verification: {'ENABLED' if VERIFY_SSL else 'DISABLED'}")
+    if AUTO_REFRESH:
+        print(f"🔄 Auto-Refresh: ENABLED (5 min intervals)")
     print("="*60 + "\n")
 
     # Load K8s data in parallel
