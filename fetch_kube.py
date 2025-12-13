@@ -80,9 +80,11 @@ from collections import defaultdict
 
 try:
     import aiohttp
-except ImportError:
+    from jinja2 import Template
+except ImportError as e:
+    missing_module = str(e).split("'")[1] if "'" in str(e) else "required modules"
     print("=" * 60)
-    print("ERROR: Required module 'aiohttp' not found!")
+    print(f"ERROR: Required module '{missing_module}' not found!")
     print("=" * 60)
     print("\nAttempting to install dependencies automatically...\n")
 
@@ -477,8 +479,8 @@ async def process_service(
     pod_json: dict,
     rs_json: dict,
     session: aiohttp.ClientSession
-) -> str:
-    """Process a single service and return HTML fragment."""
+) -> dict:
+    """Process a single service and return service data dict."""
 
     log.info(f"Processing {service}…")
 
@@ -521,48 +523,579 @@ async def process_service(
 
     # Get pods
     pod_list = get_pods_for_service(service, pod_json)
-    pods_html = ""
+    pods_info = []
     if not pod_list:
-        pods_html = "No pods found"
+        pods_info = ["No pods found"]
     else:
-        pods_html = "\n".join([get_pod_info(p, pod_json) for p in pod_list])
+        pods_info = [get_pod_info(p, pod_json) for p in pod_list]
 
     # Get common branches (async)
     if tag == "<none>":
-        common_branches_html = "Skipped (no tag)"
+        common_branches = "Skipped (no tag)"
     else:
-        common_branches_html = await fetch_common_branches(session, repo, tag)
+        common_branches = await fetch_common_branches(session, repo, tag)
 
     # Get history
-    history_html = ""
     history = get_cb_history(repo)
+    history_data = []
     for filename, content in history:
-        history_html += f"--- {filename} ---\n{content}\n\n"
-    if not history_html:
-        history_html = "No history available"
+        history_data.append({"filename": filename, "content": content})
 
-    # Build HTML fragment
-    html = f"""<div class='card'>
-<div class='svc-title'>{service}</div>
-<div><b>Repo:</b> {repo}</div>
-<div><b>Tag:</b> {tag}</div>
-<div class='status-row'>
-<span class='status {status_class}'>{status}</span>
-<span class='deployed'>Deployed: {deployed_at}</span>
-</div>
-<details><summary>Pods</summary><pre>
-{pods_html}
-</pre></details>
-<details open><summary>common_branches (current)</summary><pre>
-{common_branches_html}
-</pre></details>
-<details><summary>History (last 3)</summary><pre>
-{history_html}
-</pre></details>
-</div>
-"""
+    # Return structured data
+    return {
+        "service": service,
+        "repo": repo,
+        "tag": tag,
+        "status": status,
+        "status_class": status_class,
+        "deployed_at": deployed_at,
+        "replicas": replicas,
+        "available": available,
+        "pods_info": pods_info,
+        "common_branches": common_branches,
+        "history": history_data
+    }
 
-    return html
+
+# ============================================================
+# HTML TEMPLATE RENDERING
+# ============================================================
+
+def render_html_report(namespace: str, services_data: list, total: int, healthy: int, degraded: int, missing: int) -> str:
+    """Render HTML report using Jinja2 template."""
+
+    template_str = '''<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>K8s Deployment Report - {{ namespace }}</title>
+<style>
+:root {
+  --bg-primary: #f5f7fa;
+  --bg-secondary: #ffffff;
+  --bg-code: #1e1e2e;
+  --text-primary: #2c3e50;
+  --text-secondary: #7f8c8d;
+  --text-code: #e0e0e0;
+  --border: #e1e8ed;
+  --shadow: rgba(0, 0, 0, 0.08);
+  --accent: #3498db;
+  --status-ok: #2ecc71;
+  --status-ok-bg: #d4f7da;
+  --status-degraded: #f39c12;
+  --status-degraded-bg: #ffe7c2;
+  --status-missing: #e74c3c;
+  --status-missing-bg: #ffd4d4;
+}
+
+[data-theme="dark"] {
+  --bg-primary: #0d1117;
+  --bg-secondary: #161b22;
+  --bg-code: #0d1117;
+  --text-primary: #c9d1d9;
+  --text-secondary: #8b949e;
+  --text-code: #c9d1d9;
+  --border: #30363d;
+  --shadow: rgba(0, 0, 0, 0.3);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  padding: 20px;
+  line-height: 1.6;
+  transition: background 0.3s, color 0.3s;
+}
+
+.header {
+  max-width: 1400px;
+  margin: 0 auto 30px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 20px;
+}
+
+.header h1 {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.controls {
+  display: flex;
+  gap: 15px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.search-box {
+  position: relative;
+}
+
+.search-box input {
+  padding: 10px 40px 10px 15px;
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 14px;
+  width: 300px;
+  transition: border-color 0.2s;
+}
+
+.search-box input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.search-box::after {
+  content: '🔍';
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.filter-group {
+  display: flex;
+  gap: 10px;
+}
+
+.filter-btn {
+  padding: 8px 16px;
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.filter-btn:hover {
+  border-color: var(--accent);
+}
+
+.filter-btn.active {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+
+.theme-toggle {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 8px;
+  background: var(--accent);
+  color: white;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  transition: opacity 0.2s;
+}
+
+.theme-toggle:hover {
+  opacity: 0.9;
+}
+
+.stats {
+  max-width: 1400px;
+  margin: 0 auto 20px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 15px;
+}
+
+.stat-card {
+  background: var(--bg-secondary);
+  padding: 20px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  text-align: center;
+  transition: transform 0.2s;
+}
+
+.stat-card:hover {
+  transform: translateY(-2px);
+}
+
+.stat-number {
+  font-size: 32px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.stat-label {
+  font-size: 13px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+  gap: 20px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.card {
+  background: var(--bg-secondary);
+  padding: 20px;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px var(--shadow);
+  border: 1px solid var(--border);
+  transition: transform 0.2s, box-shadow 0.2s;
+  animation: fadeIn 0.3s ease-in;
+}
+
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px var(--shadow);
+}
+
+.card.hidden {
+  display: none;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.svc-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+  padding-bottom: 12px;
+  border-bottom: 2px solid var(--border);
+}
+
+.svc-name {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.svc-info {
+  margin-bottom: 15px;
+}
+
+.info-item {
+  margin-bottom: 10px;
+  font-size: 14px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.info-item strong {
+  color: var(--text-secondary);
+  font-weight: 600;
+  min-width: 80px;
+}
+
+.info-item a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.info-item a:hover {
+  text-decoration: underline;
+}
+
+.tag {
+  background: var(--bg-code);
+  color: var(--text-code);
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-family: 'Monaco', 'Consolas', monospace;
+  font-size: 13px;
+}
+
+.deployed-time {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.status {
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.status-ok {
+  background: var(--status-ok-bg);
+  color: var(--status-ok);
+}
+
+.status-degraded {
+  background: var(--status-degraded-bg);
+  color: var(--status-degraded);
+}
+
+.status-missing {
+  background: var(--status-missing-bg);
+  color: var(--status-missing);
+}
+
+.section {
+  margin-bottom: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.section summary {
+  padding: 12px 15px;
+  background: var(--bg-primary);
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 14px;
+  user-select: none;
+  transition: background 0.2s;
+  list-style: none;
+}
+
+.section summary::-webkit-details-marker {
+  display: none;
+}
+
+.section summary::before {
+  content: '▶ ';
+  display: inline-block;
+  transition: transform 0.2s;
+}
+
+.section[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.section summary:hover {
+  background: var(--border);
+}
+
+.section[open] summary {
+  border-bottom: 1px solid var(--border);
+}
+
+.code-block {
+  background: var(--bg-code);
+  color: var(--text-code);
+  padding: 15px;
+  border-radius: 0;
+  font-size: 12px;
+  font-family: 'Monaco', 'Consolas', monospace;
+  white-space: pre-wrap;
+  overflow-x: auto;
+  margin: 0;
+  line-height: 1.6;
+}
+
+.no-results {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--text-secondary);
+  font-size: 18px;
+  display: none;
+}
+
+.no-results.show {
+  display: block;
+}
+
+@media (max-width: 768px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+
+  .header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .controls {
+    flex-direction: column;
+  }
+
+  .search-box input {
+    width: 100%;
+  }
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>🚀 K8s Deployment Report - {{ namespace }}</h1>
+  <div class="controls">
+    <div class="search-box">
+      <input type="text" id="searchInput" placeholder="Search services...">
+    </div>
+    <div class="filter-group">
+      <button class="filter-btn active" data-filter="all">All</button>
+      <button class="filter-btn" data-filter="status-ok">✅ Healthy</button>
+      <button class="filter-btn" data-filter="status-degraded">⚠️ Degraded</button>
+      <button class="filter-btn" data-filter="status-missing">❌ Missing</button>
+    </div>
+    <button class="theme-toggle" onclick="toggleTheme()">🌓 Toggle Theme</button>
+  </div>
+</div>
+
+<div class="stats">
+  <div class="stat-card">
+    <div class="stat-number">{{ total }}</div>
+    <div class="stat-label">Total Services</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-number" style="color: var(--status-ok)">{{ healthy }}</div>
+    <div class="stat-label">Healthy</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-number" style="color: var(--status-degraded)">{{ degraded }}</div>
+    <div class="stat-label">Degraded</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-number" style="color: var(--status-missing)">{{ missing }}</div>
+    <div class="stat-label">Missing</div>
+  </div>
+</div>
+
+<div class="grid" id="serviceGrid">
+{% for svc in services %}
+  <div class="card" data-service="{{ svc.service }}" data-repo="{{ svc.repo }}" data-status="{{ svc.status_class }}">
+    <div class="svc-title">
+      <span class="svc-name">{{ svc.service }}</span>
+      <span class="status {{ svc.status_class }}">{{ svc.status }}</span>
+    </div>
+    <div class="svc-info">
+      <div class="info-item">
+        <strong>Repo:</strong>
+        <a href="https://github.com/Orange-Health/{{ svc.repo }}" target="_blank">{{ svc.repo }}</a>
+      </div>
+      <div class="info-item">
+        <strong>Tag:</strong>
+        <code class="tag">{{ svc.tag }}</code>
+      </div>
+      <div class="info-item">
+        <strong>Deployed:</strong>
+        <span class="deployed-time">{{ svc.deployed_at }}</span>
+      </div>
+    </div>
+
+    <details class="section">
+      <summary>📦 Pods ({{ svc.pods_info|length }})</summary>
+      <pre class="code-block">{% for pod in svc.pods_info %}{{ pod }}
+{% endfor %}</pre>
+    </details>
+
+    <details open class="section">
+      <summary>🌿 Common Branches (current)</summary>
+      <pre class="code-block">{{ svc.common_branches }}</pre>
+    </details>
+
+    <details class="section">
+      <summary>📚 History (last {{ svc.history|length }})</summary>
+      <pre class="code-block">{% for h in svc.history %}--- {{ h.filename }} ---
+{{ h.content }}
+
+{% endfor %}{% if not svc.history %}No history available{% endif %}</pre>
+    </details>
+  </div>
+{% endfor %}
+</div>
+
+<div class="no-results" id="noResults">
+  No services found matching your criteria
+</div>
+
+<script>
+// Theme toggle
+function toggleTheme() {
+  const html = document.documentElement;
+  const currentTheme = html.getAttribute('data-theme');
+  const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+  html.setAttribute('data-theme', newTheme);
+  localStorage.setItem('theme', newTheme);
+}
+
+// Load saved theme
+const savedTheme = localStorage.getItem('theme') || 'light';
+document.documentElement.setAttribute('data-theme', savedTheme);
+
+// Search functionality
+const searchInput = document.getElementById('searchInput');
+const cards = document.querySelectorAll('.card');
+const noResults = document.getElementById('noResults');
+
+searchInput.addEventListener('input', filterCards);
+
+// Filter functionality
+const filterBtns = document.querySelectorAll('.filter-btn');
+let activeFilter = 'all';
+
+filterBtns.forEach(btn => {
+  btn.addEventListener('click', () => {
+    filterBtns.forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    activeFilter = btn.dataset.filter;
+    filterCards();
+  });
+});
+
+function filterCards() {
+  const searchTerm = searchInput.value.toLowerCase();
+  let visibleCount = 0;
+
+  cards.forEach(card => {
+    const service = card.dataset.service.toLowerCase();
+    const repo = card.dataset.repo.toLowerCase();
+    const status = card.dataset.status;
+
+    const matchesSearch = service.includes(searchTerm) || repo.includes(searchTerm);
+    const matchesFilter = activeFilter === 'all' || status === activeFilter;
+
+    if (matchesSearch && matchesFilter) {
+      card.classList.remove('hidden');
+      visibleCount++;
+    } else {
+      card.classList.add('hidden');
+    }
+  });
+
+  noResults.classList.toggle('show', visibleCount === 0);
+}
+
+// Auto-refresh notice
+console.log('Report generated at: ' + new Date().toLocaleString());
+console.log('Total services: {{ total }}');
+console.log('Healthy: {{ healthy }}, Degraded: {{ degraded }}, Missing: {{ missing }}');
+</script>
+
+</body>
+</html>
+'''
+
+    template = Template(template_str)
+    return template.render(
+        namespace=namespace,
+        services=services_data,
+        total=total,
+        healthy=healthy,
+        degraded=degraded,
+        missing=missing
+    )
 
 
 # ============================================================
@@ -591,44 +1124,26 @@ async def main():
             all_services.extend(services)
 
         # Process all services in parallel (with controlled concurrency)
-        html_fragments = await asyncio.gather(*[process_with_semaphore(svc) for svc in all_services])
+        services_data = await asyncio.gather(*[process_with_semaphore(svc) for svc in all_services])
 
-    # Build final HTML report
-    html_header = """<!doctype html>
-<html><head>
-<meta charset="utf-8">
-<title>K8s Deployment Report</title>
-<style>
-body{font-family:-apple-system;background:#f5f6fa;margin:20px;}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(350px,1fr));gap:16px;}
-.card{background:white;padding:14px;border-radius:12px;box-shadow:0 2px 6px rgba(0,0,0,0.08);}
-.svc-title{font-size:18px;font-weight:600;margin-bottom:8px;}
-.status{padding:4px 8px;border-radius:6px;font-size:12px;}
-.status-ok{background:#d4f7da;color:#067a12;}
-.status-degraded{background:#ffe7c2;color:#ad6200;}
-.status-missing{background:#ffd4d4;color:#a40000;}
-pre{background:#0b1220;color:#e7eef8;padding:10px;border-radius:8px;font-size:12px;white-space:pre-wrap;}
-.summary{cursor:pointer;}
-.status-row{display:flex;justify-content:space-between;align-items:center;margin:8px 0;}
-.deployed{font-size:11px;color:#666;}
-</style>
-</head><body>
-<h2>K8s Deployment Report - {namespace}</h2>
-<div class="grid">
-""".replace("{namespace}", NAMESPACE)
+    # Calculate stats
+    total = len(services_data)
+    healthy = sum(1 for s in services_data if s["status_class"] == "status-ok")
+    degraded = sum(1 for s in services_data if s["status_class"] == "status-degraded")
+    missing = sum(1 for s in services_data if s["status_class"] == "status-missing")
 
-    html_footer = """</div>
-</body></html>
-"""
+    # Render HTML using Jinja2 template
+    html_content = render_html_report(NAMESPACE, services_data, total, healthy, degraded, missing)
 
     # Write report
     with open(REPORT_FILE, "w") as f:
-        f.write(html_header)
-        f.write("\n".join(html_fragments))
-        f.write(html_footer)
+        f.write(html_content)
 
     log.info(f"Report generated → {REPORT_FILE}")
-    print(f"\nOpen report with: open {REPORT_FILE}")
+    print(f"\n{'='*60}")
+    print(f"✅ Report generated successfully!")
+    print(f"{'='*60}\n")
+    print(f"Open report with: open {REPORT_FILE}\n")
 
 
 if __name__ == "__main__":
