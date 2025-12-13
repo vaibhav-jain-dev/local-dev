@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -eo pipefail  # Removed -u to fix unbound variable errors
 
 
 # ============================================================
@@ -64,6 +64,23 @@ set -euo pipefail
 #        ~/.k8s-deploy-cache/
 #
 # ============================================================
+
+#############################################
+# VALIDATE GITHUB TOKEN
+#############################################
+if [[ -z "${GITHUB_TOKEN:-}" ]]; then
+  echo "============================================================"
+  echo "❌ ERROR: GITHUB_TOKEN environment variable not set!"
+  echo "============================================================"
+  echo ""
+  echo "Please export your GitHub token:"
+  echo "  export GITHUB_TOKEN='your_github_token_here'"
+  echo ""
+  echo "Then rerun the script:"
+  echo "  $0 $*"
+  echo ""
+  exit 1
+fi
 
 #############################################
 # CONFIG & DIRECTORIES
@@ -303,7 +320,7 @@ process_service() {
 
   log "Processing $svc …"
 
-  # macOS-safe associative array lookup
+  # FIXED: Safe associative array lookup with default value
   local repo="${REPO_MAP[$svc]:-unknown}"
 
   # TAG — from cache or fresh
@@ -414,7 +431,9 @@ process_service() {
 for cat in "${!CATEGORIES[@]}"; do
   log "Category: $cat"
 
-  for svc in ${CATEGORIES[$cat]}; do
+  # FIXED: Safe access to CATEGORIES array
+  for svc in ${CATEGORIES[$cat]:-}; do
+    [[ -z "$svc" ]] && continue
     process_service "$svc" &
     while (( $(jobs -r | wc -l) >= PARALLEL )); do
       sleep 0.05
