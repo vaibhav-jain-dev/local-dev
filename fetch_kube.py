@@ -43,14 +43,16 @@ HOW TO RUN
 
    If namespace omitted, default = "s2"
 
+   Note: Dependencies will be auto-installed on first run if missing.
+   You'll be asked to rerun the script after installation.
+
 
 PREREQUISITES
 --------------------------------------------------------------
 • Python 3.7+
 • kubectl configured to correct cluster
-• aiohttp library: pip install aiohttp
-• curl
-• GITHUB_TOKEN environment variable
+• GITHUB_TOKEN environment variable (required)
+• aiohttp library (auto-installs if missing)
 
 
 OUTPUT
@@ -72,10 +74,59 @@ from typing import Dict, List, Optional, Tuple
 import logging
 from collections import defaultdict
 
+# ============================================================
+# AUTO-INSTALL DEPENDENCIES
+# ============================================================
+
 try:
     import aiohttp
 except ImportError:
-    print("ERROR: aiohttp not installed. Run: pip install aiohttp")
+    print("=" * 60)
+    print("ERROR: Required module 'aiohttp' not found!")
+    print("=" * 60)
+    print("\nAttempting to install dependencies automatically...\n")
+
+    script_dir = Path(__file__).parent
+    requirements_file = script_dir / "requirements-fetch-kube.txt"
+
+    if requirements_file.exists():
+        try:
+            subprocess.check_call([
+                sys.executable, "-m", "pip", "install", "-r", str(requirements_file)
+            ])
+            print("\n" + "=" * 60)
+            print("✅ Dependencies installed successfully!")
+            print("=" * 60)
+            print("\nPlease RERUN the script:")
+            print(f"  python3 {sys.argv[0]} {' '.join(sys.argv[1:])}\n")
+            sys.exit(0)
+        except subprocess.CalledProcessError as e:
+            print("\n" + "=" * 60)
+            print("❌ Failed to install dependencies automatically")
+            print("=" * 60)
+            print(f"\nPlease install manually:")
+            print(f"  pip install -r {requirements_file}\n")
+            sys.exit(1)
+    else:
+        print(f"\n❌ Requirements file not found: {requirements_file}")
+        print("\nPlease install manually:")
+        print("  pip install aiohttp\n")
+        sys.exit(1)
+
+
+# ============================================================
+# VALIDATE GITHUB TOKEN
+# ============================================================
+
+GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")
+if not GITHUB_TOKEN:
+    print("=" * 60)
+    print("❌ ERROR: GITHUB_TOKEN environment variable not set!")
+    print("=" * 60)
+    print("\nPlease export your GitHub token:")
+    print("  export GITHUB_TOKEN='your_github_token_here'\n")
+    print("Then rerun the script:")
+    print(f"  python3 {sys.argv[0]} {' '.join(sys.argv[1:])}\n")
     sys.exit(1)
 
 
@@ -348,12 +399,8 @@ async def fetch_common_branches(session: aiohttp.ClientSession, repo: str, tag: 
     # CACHE MISS - fetch from GitHub API
     log.info(f"Fetching common branches for {repo}:{tag}")
 
-    github_token = os.getenv("GITHUB_TOKEN")
-    if not github_token:
-        return "ERROR: GITHUB_TOKEN not set"
-
     api_base = f"https://api.github.com/repos/Orange-Health/{repo}"
-    headers = {"Authorization": f"Bearer {github_token}"}
+    headers = {"Authorization": f"Bearer {GITHUB_TOKEN}"}
 
     results = []
 
