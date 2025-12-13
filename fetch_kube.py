@@ -35,7 +35,13 @@ HOW TO RUN
 1. Ensure GitHub token exported:
       export GITHUB_TOKEN="xxxxxx"
 
-2. Run the script:
+2. (Optional) Enable SSL verification if needed:
+      export VERIFY_SSL=true
+
+   Note: SSL verification is DISABLED by default to avoid certificate errors.
+   Only enable if you have proper certificates configured.
+
+3. Run the script:
       python3 fetch_kube.py <namespace>
 
    Example:
@@ -68,6 +74,7 @@ import json
 import os
 import sys
 import subprocess
+import ssl
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -139,6 +146,9 @@ if not GITHUB_TOKEN:
 NAMESPACE = sys.argv[1] if len(sys.argv) > 1 else "s2"
 MAX_CONCURRENT = 10  # Parallelism for service processing
 MAX_GITHUB_CONCURRENT = 5  # Parallelism for GitHub API calls
+
+# SSL Configuration - set to False to disable SSL verification (useful for corporate proxies)
+VERIFY_SSL = os.environ.get("VERIFY_SSL", "false").lower() in ("true", "1", "yes")
 
 CACHE_DIR = Path.home() / ".k8s-deploy-cache"
 LOG_FILE = CACHE_DIR / "fetch_kube.log"
@@ -1108,8 +1118,17 @@ async def main():
     # Load K8s data in parallel
     deploy_json, pod_json, rs_json = await load_k8s_data()
 
-    # Create HTTP session for GitHub API
-    async with aiohttp.ClientSession() as session:
+    # Create SSL context
+    ssl_context = None
+    if not VERIFY_SSL:
+        ssl_context = ssl.create_default_context()
+        ssl_context.check_hostname = False
+        ssl_context.verify_mode = ssl.CERT_NONE
+        log.info("SSL verification disabled (set VERIFY_SSL=true to enable)")
+
+    # Create HTTP session for GitHub API with SSL context
+    connector = aiohttp.TCPConnector(ssl=ssl_context)
+    async with aiohttp.ClientSession(connector=connector) as session:
         # Process all services with controlled concurrency
         semaphore = asyncio.Semaphore(MAX_CONCURRENT)
 
