@@ -75,7 +75,8 @@ import os
 import sys
 import subprocess
 import ssl
-from datetime import datetime
+import argparse
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 import logging
@@ -140,10 +141,20 @@ if not GITHUB_TOKEN:
 
 
 # ============================================================
+# COMMAND LINE ARGUMENTS
+# ============================================================
+
+parser = argparse.ArgumentParser(description='Generate K8s deployment report')
+parser.add_argument('namespace', nargs='?', default='s2', help='Kubernetes namespace (default: s2)')
+parser.add_argument('--fresh', action='store_true', help='Bypass all caches and fetch fresh data')
+args = parser.parse_args()
+
+# ============================================================
 # CONFIG & DIRECTORIES
 # ============================================================
 
-NAMESPACE = sys.argv[1] if len(sys.argv) > 1 else "s2"
+NAMESPACE = args.namespace
+USE_CACHE = not args.fresh  # Skip cache if --fresh flag is used
 MAX_CONCURRENT = 10  # Parallelism for service processing
 MAX_GITHUB_CONCURRENT = 5  # Parallelism for GitHub API calls
 
@@ -162,17 +173,48 @@ CACHE_DIR.mkdir(exist_ok=True)
 TAG_CACHE_DIR.mkdir(exist_ok=True)
 CB_CACHE_DIR.mkdir(exist_ok=True)
 
-# Setup logging
+# Setup minimal logging (only warnings and errors)
 logging.basicConfig(
-    level=logging.INFO,
-    format='[%(asctime)s] %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S',
-    handlers=[
-        logging.FileHandler(LOG_FILE),
-        logging.StreamHandler()
-    ]
+    level=logging.WARNING,
+    format='%(message)s',
+    handlers=[logging.FileHandler(LOG_FILE)]
 )
 log = logging.getLogger(__name__)
+
+# Progress tracking
+total_services = 0
+completed_services = 0
+
+def print_progress(message):
+    """Print progress update."""
+    global completed_services
+    if completed_services > 0:
+        print(f"\r[{completed_services}/{total_services}] {message}", end='', flush=True)
+    else:
+        print(f"{message}")
+
+def iso_to_ist_human(iso_str: str) -> str:
+    """Convert ISO timestamp to human-readable IST format."""
+    if not iso_str or iso_str == "N/A":
+        return "N/A"
+    try:
+        # Parse ISO format (handles both with/without timezone)
+        if 'Z' in iso_str:
+            dt = datetime.fromisoformat(iso_str.replace('Z', '+00:00'))
+        elif '+' in iso_str or iso_str.count('-') > 2:
+            dt = datetime.fromisoformat(iso_str)
+        else:
+            # Assume UTC if no timezone info
+            dt = datetime.fromisoformat(iso_str).replace(tzinfo=timezone.utc)
+
+        # Convert to IST (UTC+5:30)
+        ist = dt + timedelta(hours=5, minutes=30)
+
+        # Format: "07 Nov 2025, 07:06 PM IST"
+        return ist.strftime("%d %b %Y, %I:%M %p IST")
+    except Exception as e:
+        log.warning(f"Date parsing error for '{iso_str}': {e}")
+        return iso_str
 
 
 # ============================================================
@@ -225,9 +267,14 @@ def tag_cache_file(service: str) -> Path:
 
 
 def read_tag_cache(service: str) -> Optional[str]:
+    if not USE_CACHE:  # Skip cache if --fresh flag is used
+        return None
     cache_file = tag_cache_file(service)
     if cache_file.exists():
-        return cache_file.read_text().strip()
+        content = cache_file.read_text().strip()
+        # Validate content doesn't have template artifacts or invalid characters
+        if content and len(content) < 100 and not any(c in content for c in ['{', '}', '"', "'"]):
+            return content
     return None
 
 
@@ -354,11 +401,12 @@ def extract_tag(image: str) -> str:
 # ============================================================
 
 def get_pod_info(pod_name: str, pod_json: dict) -> str:
-    """Get formatted pod information."""
+    """Get formatted pod information with IST timestamps."""
     for item in pod_json.get("items", []):
         if item.get("metadata", {}).get("name") == pod_name:
             name = item.get("metadata", {}).get("name", "")
             start_time = item.get("status", {}).get("startTime", "N/A")
+            start_time_readable = iso_to_ist_human(start_time)
 
             container_statuses = item.get("status", {}).get("containerStatuses", [{}])
             if container_statuses:
@@ -374,9 +422,9 @@ def get_pod_info(pod_name: str, pod_json: dict) -> str:
                 elif container.get("state", {}).get("terminated"):
                     state = "Terminated"
 
-                return f"{name} | {start_time} | ready:{ready} restarts:{restarts} | {state}"
+                return f"{name} | {start_time_readable} | ready:{ready} restarts:{restarts} | {state}"
 
-            return f"{name} | {start_time} | N/A"
+            return f"{name} | {start_time_readable} | N/A"
 
     return f"{pod_name} | Not found"
 
@@ -403,8 +451,8 @@ async def fetch_common_branches(session: aiohttp.ClientSession, repo: str, tag: 
 
     cache_file = cb_cache_file(repo, tag)
 
-    # CACHE HIT
-    if cache_file.exists():
+    # CACHE HIT (only if USE_CACHE is True)
+    if USE_CACHE and cache_file.exists():
         log.info(f"Cache hit for {repo}:{tag}")
         return cache_file.read_text()
 
@@ -412,7 +460,8 @@ async def fetch_common_branches(session: aiohttp.ClientSession, repo: str, tag: 
     log.info(f"Fetching common branches for {repo}:{tag}")
 
     api_base = f"https://api.github.com/repos/Orange-Health/{repo}"
-    headers = {"Authorization": f"Bearer {GITHUB_TOKEN}"}
+    # CRITICAL FIX: GitHub API requires "token" prefix, not "Bearer"
+    headers = {"Authorization": f"token {GITHUB_TOKEN}"}
 
     results = []
 
@@ -514,6 +563,9 @@ async def process_service(
             )
             break
 
+    # Convert to IST human-readable format
+    deployed_at_readable = iso_to_ist_human(deployed_at)
+
     # Get replica status
     replicas = 0
     available = 0
@@ -551,6 +603,11 @@ async def process_service(
     for filename, content in history:
         history_data.append({"filename": filename, "content": content})
 
+    # Update progress
+    global completed_services
+    completed_services += 1
+    print_progress(f"Processed {service}")
+
     # Return structured data
     return {
         "service": service,
@@ -558,7 +615,7 @@ async def process_service(
         "tag": tag,
         "status": status,
         "status_class": status_class,
-        "deployed_at": deployed_at,
+        "deployed_at": deployed_at_readable,  # Use IST readable format
         "replicas": replicas,
         "available": available,
         "pods_info": pods_info,
@@ -1113,10 +1170,21 @@ console.log('Healthy: {{ healthy }}, Degraded: {{ degraded }}, Missing: {{ missi
 # ============================================================
 
 async def main():
-    log.info(f"Starting fetch_kube.py for namespace: {NAMESPACE}")
+    global total_services
+
+    # Print startup banner
+    print("="*60)
+    print("🚀 K8s Deployment Report Generator")
+    print("="*60)
+    print(f"📍 Namespace: {NAMESPACE}")
+    print(f"💾 Cache: {'DISABLED (--fresh mode)' if not USE_CACHE else 'ENABLED'}")
+    print(f"🔒 SSL Verification: {'ENABLED' if VERIFY_SSL else 'DISABLED'}")
+    print("="*60 + "\n")
 
     # Load K8s data in parallel
+    print("📦 Loading K8s data...")
     deploy_json, pod_json, rs_json = await load_k8s_data()
+    print(f"✅ Loaded {len(deploy_json.get('items', []))} deployments, {len(pod_json.get('items', []))} pods\n")
 
     # Create SSL context
     ssl_context = None
@@ -1124,7 +1192,14 @@ async def main():
         ssl_context = ssl.create_default_context()
         ssl_context.check_hostname = False
         ssl_context.verify_mode = ssl.CERT_NONE
-        log.info("SSL verification disabled (set VERIFY_SSL=true to enable)")
+
+    # Process services
+    all_services = []
+    for category, services in CATEGORIES.items():
+        all_services.extend(services)
+
+    total_services = len(all_services)
+    print(f"🔄 Processing {total_services} services...\n")
 
     # Create HTTP session for GitHub API with SSL context
     connector = aiohttp.TCPConnector(ssl=ssl_context)
@@ -1136,14 +1211,10 @@ async def main():
             async with semaphore:
                 return await process_service(service, deploy_json, pod_json, rs_json, session)
 
-        # Collect all services
-        all_services = []
-        for category, services in CATEGORIES.items():
-            log.info(f"Category: {category}")
-            all_services.extend(services)
-
         # Process all services in parallel (with controlled concurrency)
         services_data = await asyncio.gather(*[process_with_semaphore(svc) for svc in all_services])
+
+    print("\n")  # Newline after progress
 
     # Calculate stats
     total = len(services_data)
@@ -1158,11 +1229,16 @@ async def main():
     with open(REPORT_FILE, "w") as f:
         f.write(html_content)
 
-    log.info(f"Report generated → {REPORT_FILE}")
-    print(f"\n{'='*60}")
-    print(f"✅ Report generated successfully!")
-    print(f"{'='*60}\n")
-    print(f"Open report with: open {REPORT_FILE}\n")
+    print("="*60)
+    print("✅ Report generated successfully!")
+    print("="*60)
+    print(f"\n📊 Statistics:")
+    print(f"  Total Services: {total}")
+    print(f"  ✅ Healthy: {healthy}")
+    print(f"  ⚠️  Degraded: {degraded}")
+    print(f"  ❌ Missing: {missing}")
+    print(f"\n📄 Report saved to: {REPORT_FILE}")
+    print(f"\nOpen with: open {REPORT_FILE}\n")
 
 
 if __name__ == "__main__":
